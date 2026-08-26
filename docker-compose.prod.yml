@@ -36,6 +36,7 @@ services:
       context: .
       dockerfile: docker/api.Dockerfile
     restart: unless-stopped
+    stop_grace_period: 30s # đủ thời gian cho in-flight requests + prisma.$disconnect
     env_file: .env.production
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public

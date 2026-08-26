@@ -34,6 +34,10 @@ async function bootstrap() {
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
   });
 
+  // Behind nginx/reverse proxy: trust exactly one hop so req.ip is the real
+  // client IP — without this, ThrottlerGuard rate-limits everyone as one bucket.
+  app.getHttpAdapter().getInstance().set('trust proxy', 1);
+
   app.setGlobalPrefix('api/v1');
   app.enableShutdownHooks();
   app.useGlobalPipes(
