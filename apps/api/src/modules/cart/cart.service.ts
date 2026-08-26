@@ -4,8 +4,9 @@ import { PrismaService } from '../../infra/prisma.service';
 import { BusinessRuleError } from '../../common/exceptions/business.errors';
 
 const cartInclude = {
+  // NOTE: no savedForLater filter here — the UI renders a separate
+  // "saved for later" section from the same payload. Checkout re-filters.
   items: {
-    where: { savedForLater: false },
     orderBy: { createdAt: 'asc' },
     include: {
       product: {
