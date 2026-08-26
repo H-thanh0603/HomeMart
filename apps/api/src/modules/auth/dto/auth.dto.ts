@@ -35,9 +35,11 @@ export class LoginDto {
 }
 
 export class RefreshTokenDto {
-  @ApiProperty()
+  // Optional — the refresh token normally travels in the httpOnly cookie.
+  @ApiProperty({ required: false })
+  @IsOptional()
   @IsString()
-  refreshToken: string;
+  refreshToken?: string;
 }
 
 export class ForgotPasswordDto {

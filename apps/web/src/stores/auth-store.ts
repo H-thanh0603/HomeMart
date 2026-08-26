@@ -5,7 +5,6 @@ import { persist } from 'zustand/middleware';
 
 interface AuthState {
   accessToken: string | null;
-  refreshToken: string | null;
   user: {
     id: string;
     email: string;
@@ -16,11 +15,8 @@ interface AuthState {
   } | null;
   hydrated: boolean;
   setHydrated: () => void;
-  setSession: (
-    accessToken: string,
-    refreshToken: string,
-    user?: AuthState['user'],
-  ) => void;
+  // Refresh token lives in an httpOnly cookie set by the API — never in JS storage.
+  setSession: (accessToken: string, user?: AuthState['user']) => void;
   setUser: (user: AuthState['user']) => void;
   clearSession: () => void;
 }
@@ -29,21 +25,18 @@ export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
       accessToken: null,
-      refreshToken: null,
       user: null,
       hydrated: false,
       setHydrated: () => set({ hydrated: true }),
-      setSession: (accessToken, refreshToken, user) =>
-        set((s) => ({ accessToken, refreshToken, user: user ?? s.user })),
+      setSession: (accessToken, user) =>
+        set((s) => ({ accessToken, user: user ?? s.user })),
       setUser: (user) => set({ user }),
-      clearSession: () =>
-        set({ accessToken: null, refreshToken: null, user: null }),
+      clearSession: () => set({ accessToken: null, user: null }),
     }),
     {
       name: 'homemart-auth',
       partialize: (s) => ({
         accessToken: s.accessToken,
-        refreshToken: s.refreshToken,
         user: s.user,
       }),
       onRehydrateStorage: () => (state) => {

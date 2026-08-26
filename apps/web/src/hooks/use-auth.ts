@@ -22,7 +22,7 @@ export function useLogin() {
     mutationFn: (body: { email: string; password: string }) =>
       postData<AuthPayload>('/auth/login', body),
     onSuccess: (payload) => {
-      setSession(payload.accessToken, payload.refreshToken, payload.user);
+      setSession(payload.accessToken, payload.user);
       queryClient.invalidateQueries();
     },
   });
@@ -53,16 +53,15 @@ export function useResetPassword() {
 }
 
 export function useLogout() {
-  const { refreshToken, clearSession } = useAuthStore.getState();
+  const clearSession = useAuthStore((s) => s.clearSession);
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async () => {
-      if (refreshToken) {
-        try {
-          await postData('/auth/logout', { refreshToken });
-        } catch {
-          // ignore — xoá session local bất kể
-        }
+      try {
+        // Refresh token rides in the httpOnly cookie — server revokes + clears it.
+        await postData('/auth/logout');
+      } catch {
+        // ignore — xoá session local bất kể
       }
     },
     onSuccess: () => {

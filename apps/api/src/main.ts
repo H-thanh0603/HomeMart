@@ -7,6 +7,7 @@ import helmet from 'helmet';
 import { getEnv } from './config/env';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import cookieParser from 'cookie-parser';
 
 async function bootstrap() {
   const env = getEnv();
@@ -15,6 +16,9 @@ async function bootstrap() {
     env.NODE_ENV === 'production' ? ['log', 'warn', 'error'] : ['log', 'debug', 'verbose', 'warn', 'error'];
   // rawBody: required for Stripe webhook signature verification
   const app = await NestFactory.create(AppModule, { logger: logLevels, rawBody: true });
+
+  // Refresh token travels in an httpOnly cookie (see auth.controller.ts)
+  app.use(cookieParser());
 
   // Security headers
   app.use(

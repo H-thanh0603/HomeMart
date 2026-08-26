@@ -29,6 +29,7 @@ export class ApiError extends Error {
 export const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 15000,
+  withCredentials: true, // send the httpOnly refresh-token cookie
 });
 
 // ─── Request: gắn Bearer token ───────────────────────────────────────────────
@@ -46,15 +47,16 @@ api.interceptors.request.use((config) => {
 let refreshingPromise: Promise<string | null> | null = null;
 
 async function refreshAccessToken(): Promise<string | null> {
-  const { refreshToken, setSession, clearSession } = useAuthStore.getState();
-  if (!refreshToken) return null;
+  const { setSession, clearSession } = useAuthStore.getState();
   try {
-    const res = await axios.post<ApiEnvelope<{ accessToken: string; refreshToken: string }>>(
+    // Refresh token is in the httpOnly cookie — no body needed.
+    const res = await axios.post<ApiEnvelope<{ accessToken: string }>>(
       `${API_BASE_URL}/auth/refresh`,
-      { refreshToken },
+      {},
+      { withCredentials: true },
     );
     const payload = res.data.data;
-    setSession(payload.accessToken, payload.refreshToken);
+    setSession(payload.accessToken);
     return payload.accessToken;
   } catch {
     clearSession();
@@ -102,12 +104,15 @@ export async function getData<T>(config: AxiosRequestConfig): Promise<T> {
   return res.data.data;
 }
 
-/** Lấy `{ data, meta }` từ envelope (danh sách phân trang). */
+/** Lấy `{ data: items[], meta }` từ envelope (danh sách phân trang).
+ *  Hỗ trợ cả 2 shape backend: `data` là mảng hoặc `data.items` là mảng. */
 export async function getPage<T>(
   config: AxiosRequestConfig,
-): Promise<{ data: T; meta?: ApiEnvelope<T>['meta'] }> {
-  const res = await api.request<ApiEnvelope<T>>(config);
-  return { data: res.data.data, meta: res.data.meta };
+): Promise<{ data: T[]; meta?: ApiEnvelope<T[]>['meta'] }> {
+  const res = await api.request<ApiEnvelope<T[] | { items?: T[] }>>(config);
+  const raw = res.data.data;
+  const items = Array.isArray(raw) ? raw : Array.isArray(raw?.items) ? raw.items : [];
+  return { data: items, meta: res.data.meta };
 }
 
 export async function postData<T>(url: string, body?: unknown): Promise<T> {

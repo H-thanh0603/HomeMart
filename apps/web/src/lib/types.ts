@@ -42,8 +42,11 @@ export interface User {
 
 export interface AuthPayload {
   accessToken: string;
-  refreshToken: string;
   user: User;
+}
+
+export interface RefreshPayload {
+  accessToken: string;
 }
 
 export interface Category {
