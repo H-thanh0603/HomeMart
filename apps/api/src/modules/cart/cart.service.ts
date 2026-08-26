@@ -12,7 +12,6 @@ const cartInclude = {
         select: {
           id: true, name: true, slug: true, sku: true, price: true, compareAtPrice: true,
           images: { where: { isPrimary: true }, take: 1 },
-          inventory: { select: { availableStock: true } },
         },
       },
       variant: { include: { inventory: true } },
@@ -40,7 +39,32 @@ export class CartService {
   }
 
   private async getCartById(cartId: string) {
-    return this.prisma.cart.findUnique({ where: { id: cartId }, include: cartInclude });
+    const cart = await this.prisma.cart.findUnique({ where: { id: cartId }, include: cartInclude });
+    if (!cart) return null;
+    return this.withSimpleProductStock(cart);
+  }
+
+  /** Product has no direct inventory relation (simple products use variantId=null rows). */
+  private async withSimpleProductStock<T extends {
+    items: { productId: string; variantId: string | null; product: Record<string, unknown> }[];
+  }>(cart: T): Promise<T> {
+    const simpleIds = cart.items.filter((i) => !i.variantId).map((i) => i.productId);
+    const stockByProduct = new Map<string, number>();
+    if (simpleIds.length) {
+      const invs = await this.prisma.inventory.findMany({
+        where: { productId: { in: simpleIds }, variantId: null },
+        select: { productId: true, availableStock: true },
+      });
+      for (const inv of invs) stockByProduct.set(inv.productId, inv.availableStock);
+    }
+    return {
+      ...cart,
+      items: cart.items.map((i) =>
+        i.variantId
+          ? i
+          : { ...i, product: { ...i.product, inventory: { availableStock: stockByProduct.get(i.productId) ?? 0 } } },
+      ),
+    };
   }
 
   private fullInclude() {
