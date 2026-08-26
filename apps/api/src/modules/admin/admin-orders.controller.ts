@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 import { OrderStatus, Role } from '@prisma/client';
 import { Roles } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/auth.decorators';
@@ -11,9 +11,9 @@ import { PaymentsService } from '../payments/payments.service';
 
 export class AdminListOrdersQuery {
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) page = 1;
-  @IsOptional() @Type(() => Number) @IsInt() @Min(1) limit = 20;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) limit = 20;
   @IsOptional() @IsString() q?: string;
-  @IsOptional() status?: OrderStatus;
+  @IsOptional() @IsIn(Object.values(OrderStatus)) status?: OrderStatus;
 }
 
 @ApiTags('admin/orders')

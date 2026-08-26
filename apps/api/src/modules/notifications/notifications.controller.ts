@@ -1,6 +1,7 @@
 import { Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/auth.decorators';
+import { clampLimit, clampPage } from '../../common/utils/helpers';
 import { NotificationsService } from './notifications.service';
 
 @ApiTags('notifications')
@@ -11,7 +12,7 @@ export class NotificationsController {
 
   @Get()
   list(@CurrentUser('id') userId: string, @Query('page') page = '1', @Query('limit') limit = '20') {
-    return this.notifications.listMine(userId, Number(page), Number(limit));
+    return this.notifications.listMine(userId, clampPage(page), clampLimit(limit, 20));
   }
 
   @Post(':id/read')

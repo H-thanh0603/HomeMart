@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsArray, IsIn, IsInt, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
+import { IsArray, IsIn, IsInt, IsOptional, IsString, MaxLength, Min, ValidateNested } from 'class-validator';
 import { OrderStatus, PaymentMethodType } from '@prisma/client';
 import { CurrentUser } from '../../common/decorators/auth.decorators';
 import { buildPagedMeta } from '../../common/dto/pagination.dto';
@@ -28,6 +28,11 @@ export class PreviewDto {
   @IsOptional() items?: CheckoutItemDto[];
   @IsOptional() @IsString() shippingMethodId?: string;
   @IsOptional() @IsString() voucherCode?: string;
+}
+
+
+export class OrderActionDto {
+  @IsOptional() @IsString() @MaxLength(500) reason?: string;
 }
 
 export class ListOrdersQuery {
@@ -67,12 +72,21 @@ export class OrdersController {
   }
 
   @Post(':id/cancel')
-  cancel(@CurrentUser('id') userId: string, @Param('id') id: string, @Body() dto: { reason?: string }) {
+  cancel(
+    @CurrentUser('id') userId: string,
+    @Param('id') id: string,
+    @Body() dto: OrderActionDto,
+  ) {
+    // validated below via helper
     return this.ordersService.cancel(userId, id, dto.reason);
   }
 
   @Post(':id/return')
-  requestReturn(@CurrentUser('id') userId: string, @Param('id') id: string, @Body() dto: { reason?: string }) {
+  requestReturn(
+    @CurrentUser('id') userId: string,
+    @Param('id') id: string,
+    @Body() dto: OrderActionDto,
+  ) {
     return this.ordersService.requestReturn(userId, id, dto.reason);
   }
 }

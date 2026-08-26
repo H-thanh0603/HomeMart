@@ -19,7 +19,7 @@ export class UpdateProfileDto {
   phone?: string;
 
   @ApiPropertyOptional()
-  @IsOptional() @IsString()
+  @IsOptional() @IsString() @MaxLength(500) @Matches(/^https?:\/\//)
   avatarUrl?: string;
 }
 

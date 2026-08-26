@@ -25,3 +25,15 @@ export function randomToken(length = 32): string {
   for (let i = 0; i < length; i++) out += chars[bytes[i] % chars.length];
   return out;
 }
+
+/** Clamp a raw query-param page number to a safe integer >= 1. */
+export function clampPage(value: unknown, fallback = 1): number {
+  const n = Math.floor(Number(value ?? fallback));
+  return Number.isFinite(n) && n >= 1 ? n : fallback;
+}
+
+/** Clamp a raw query-param limit to [1, max]. */
+export function clampLimit(value: unknown, fallback: number, max = 100): number {
+  const n = Math.floor(Number(value ?? fallback));
+  return Number.isFinite(n) && n >= 1 ? Math.min(n, max) : fallback;
+}

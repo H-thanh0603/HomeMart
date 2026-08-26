@@ -1,9 +1,10 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsInt, IsOptional, IsString, Min } from 'class-validator';
 import { OrderStatus, Role } from '@prisma/client';
 import { Roles } from '../../common/decorators/auth.decorators';
+import { clampLimit, clampPage } from '../../common/utils/helpers';
 import { AdminService } from './admin.service';
 
 export class AdminListOrdersQuery {
@@ -32,18 +33,24 @@ export class AdminController {
     @Query('to') to = new Date().toISOString().slice(0, 10),
     @Query('groupBy') groupBy: 'day' | 'month' = 'day',
   ) {
-    return this.adminService.revenueReport(from, to, groupBy);
+    if (!isDateString(from) || !isDateString(to)) throw new BadRequestException('Invalid date range');
+    return this.adminService.revenueReport(from, to, groupBy === 'month' ? 'month' : 'day');
   }
 
   @Get('reports/top-categories')
   topCategories(@Query('from') from = '', @Query('to') to = '') {
-    const defaultFrom = new Date(Date.now() - 30 * 86400e3).toISOString();
-    const defaultTo = new Date().toISOString();
-    return this.adminService.topCategories(from || defaultFrom, to || defaultTo);
+    const effFrom = from || new Date(Date.now() - 30 * 86400e3).toISOString();
+    const effTo = to || new Date().toISOString();
+    if (!isDateString(effFrom) || !isDateString(effTo)) throw new BadRequestException('Invalid date range');
+    return this.adminService.topCategories(effFrom, effTo);
   }
 
   @Get('audit-logs') @Roles(Role.ADMIN)
   auditLogs(@Query('page') page = '1', @Query('limit') limit = '50') {
-    return this.adminService.getAuditLogs(Number(page), Number(limit));
+    return this.adminService.getAuditLogs(clampPage(page), clampLimit(limit, 50));
   }
+}
+
+function isDateString(v: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}(T[\d:.]+Z?)?$/.test(v) && !Number.isNaN(new Date(v).getTime());
 }

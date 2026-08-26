@@ -1,7 +1,7 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, UnauthorizedException } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 import { CurrentUser, OptionalAuth } from '../../common/decorators/auth.decorators';
 import { GuestToken } from '../../common/decorators/guest-token.decorator';
 import { CartService } from './cart.service';
@@ -10,6 +10,14 @@ export class AddCartItemDto {
   @IsString() productId!: string;
   @IsOptional() @IsString() variantId?: string;
   @Type(() => Number) @IsInt() @Min(1) quantity!: number;
+}
+
+export class UpdateCartItemDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(99)
+  quantity!: number;
 }
 
 @ApiTags('cart')
@@ -43,12 +51,12 @@ export class CartController {
   @Patch('items/:id')
   updateQty(
     @Param('id') itemId: string,
-    @Body() dto: { quantity: number },
+    @Body() dto: UpdateCartItemDto,
     @CurrentUser('id') userId: string | undefined,
     @GuestToken() guestToken?: string,
   ) {
     return this.resolveCart(userId, guestToken).then((cart) =>
-      this.cartService.updateQuantity(cart.id, itemId, Number(dto.quantity)),
+      this.cartService.updateQuantity(cart.id, itemId, dto.quantity),
     );
   }
 

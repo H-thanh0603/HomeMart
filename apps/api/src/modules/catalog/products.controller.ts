@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
 import { Role, ProductStatus } from '@prisma/client';
 import { Public, Roles } from '../../common/decorators/auth.decorators';
 import { Audit } from '../admin/audit.decorator';
@@ -11,7 +11,7 @@ import { BulkProductActionDto, ProductDto } from './catalog.controller';
 
 export class ProductQueryDto {
   @IsOptional() @Type(() => Number) @IsNumber() page = 1;
-  @IsOptional() @Type(() => Number) @IsInt() @Min(1) limit = 20;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) limit = 20;
   @IsOptional() @IsString() q?: string;
   @IsOptional() @IsIn(['newest', 'price_asc', 'price_desc', 'best_selling', 'rating']) sort?: ProductQuery['sort'];
   @IsOptional() @IsString() categoryId?: string;
