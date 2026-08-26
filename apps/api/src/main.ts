@@ -13,7 +13,8 @@ async function bootstrap() {
 
   const logLevels: LogLevel[] =
     env.NODE_ENV === 'production' ? ['log', 'warn', 'error'] : ['log', 'debug', 'verbose', 'warn', 'error'];
-  const app = await NestFactory.create(AppModule, { logger: logLevels });
+  // rawBody: required for Stripe webhook signature verification
+  const app = await NestFactory.create(AppModule, { logger: logLevels, rawBody: true });
 
   // Security headers
   app.use(
