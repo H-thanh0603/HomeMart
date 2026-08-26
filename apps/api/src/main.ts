@@ -42,17 +42,19 @@ async function bootstrap() {
   );
   app.useGlobalFilters(new AllExceptionsFilter());
 
-  const config = new DocumentBuilder()
-    .setTitle('HomeMart API')
-    .setDescription('E-commerce đồ gia dụng — REST API v1')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .build();
-  SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, config));
+  if (env.NODE_ENV !== 'production') {
+    const config = new DocumentBuilder()
+      .setTitle('HomeMart API')
+      .setDescription('E-commerce đồ gia dụng — REST API v1')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .build();
+    SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, config));
+    Logger.log(`📚 Swagger at http://localhost:${env.API_PORT}/api/docs`, 'Bootstrap');
+  }
 
   await app.listen(env.API_PORT);
   Logger.log(`🚀 HomeMart API ready at http://localhost:${env.API_PORT}/api/v1`, 'Bootstrap');
-  Logger.log(`📚 Swagger at http://localhost:${env.API_PORT}/api/docs`, 'Bootstrap');
 }
 
 bootstrap().catch((e) => {
