@@ -105,14 +105,27 @@ export async function getData<T>(config: AxiosRequestConfig): Promise<T> {
 }
 
 /** Lấy `{ data: items[], meta }` từ envelope (danh sách phân trang).
- *  Hỗ trợ cả 2 shape backend: `data` là mảng hoặc `data.items` là mảng. */
+ *  Hỗ trợ cả 2 shape backend: `data` là mảng hoặc `data.items` là mảng.
+ *  Meta lấy từ envelope, hoặc suy ra từ {total,page,limit} của payload. */
 export async function getPage<T>(
   config: AxiosRequestConfig,
 ): Promise<{ data: T[]; meta?: ApiEnvelope<T[]>['meta'] }> {
-  const res = await api.request<ApiEnvelope<T[] | { items?: T[] }>>(config);
+  const res = await api.request<ApiEnvelope<T[] | { items?: T[]; total?: number; page?: number; limit?: number }>>(
+    config,
+  );
   const raw = res.data.data;
   const items = Array.isArray(raw) ? raw : Array.isArray(raw?.items) ? raw.items : [];
-  return { data: items, meta: res.data.meta };
+  const meta =
+    res.data.meta ??
+    (raw && !Array.isArray(raw) && typeof raw.total === 'number'
+      ? {
+          page: raw.page ?? 1,
+          limit: raw.limit ?? items.length,
+          total: raw.total,
+          totalPages: Math.max(1, Math.ceil(raw.total / (raw.limit ?? (items.length || 1)))),
+        }
+      : undefined);
+  return { data: items, meta };
 }
 
 export async function postData<T>(url: string, body?: unknown): Promise<T> {

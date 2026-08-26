@@ -1,13 +1,13 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getData, postData } from '@/lib/api';
+import { getData, getPage, postData } from '@/lib/api';
 import type { CheckoutResult, Order, OrderPreview, ShippingMethod } from '@/lib/types';
 
 export function useOrders() {
   return useQuery({
     queryKey: ['orders'],
-    queryFn: () => getData<Order[]>({ url: '/orders' }),
+    queryFn: () => getPage<Order>({ url: '/orders', params: { limit: 50 } }),
   });
 }
 

@@ -33,7 +33,7 @@ export default function AccountOrdersPage() {
         <ListSkeleton rows={4} />
       ) : ordersQuery.isError ? (
         <ErrorState onRetry={() => ordersQuery.refetch()} />
-      ) : (ordersQuery.data ?? []).length === 0 ? (
+      ) : (ordersQuery.data?.data ?? []).length === 0 ? (
         <EmptyState
           icon={<PackageOpen className="h-12 w-12" />}
           title="Chưa có đơn hàng nào"
@@ -43,7 +43,7 @@ export default function AccountOrdersPage() {
         />
       ) : (
         <ul className="space-y-3">
-          {(ordersQuery.data ?? []).map((order) => (
+          {(ordersQuery.data?.data ?? []).map((order) => (
             <li key={order.id}>
               <Link
                 href={`/account/orders/${order.id}`}

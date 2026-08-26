@@ -30,7 +30,7 @@ export function useProducts(params: ProductListParams) {
   return useQuery({
     queryKey: ['products', params],
     queryFn: () =>
-      getPage<Product[]>({
+      getPage<Product>({
         url: '/products',
         params,
       }),
@@ -60,7 +60,7 @@ export function useRelatedProducts(slug: string) {
 export function useProductReviews(slug: string, page = 1) {
   return useQuery({
     queryKey: ['products', slug, 'reviews', page],
-    queryFn: () => getPage<ProductReview[]>({ url: `/products/${slug}/reviews`, params: { page, limit: 5 } }),
+    queryFn: () => getPage<ProductReview>({ url: `/products/${slug}/reviews`, params: { page, limit: 5 } }),
     enabled: Boolean(slug),
   });
 }
