@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600">
+  <rect width="600" height="600" fill="#f1f5f9"/>
+  <g fill="none" stroke="#cbd5e1" stroke-width="14" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M170 230 h180 a16 16 0 0 1 16 16 v150 a16 16 0 0 1 -16 16 h-180 a16 16 0 0 1 -16 -16 v-150 a16 16 0 0 1 16-16 z"/>
+    <circle cx="225" cy="290" r="24"/>
+    <path d="M154 380 l70 -60 55 45 45 -35 62 50"/>
+  </g>
+  <text x="300" y="475" text-anchor="middle" font-family="Arial, sans-serif" font-size="30" fill="#94a3b8">HomeMart</text>
+</svg>
