@@ -41,6 +41,15 @@ const envSchema = z.object({
 
 export type Env = z.infer<typeof envSchema>;
 
+// Values that must never survive into a production deployment.
+const PROD_FORBIDDEN_DEFAULTS: Array<[keyof Env & string, string]> = [
+  ['JWT_ACCESS_SECRET', 'change-me-access-secret-please-32-chars-min'],
+  ['JWT_REFRESH_SECRET', 'change-me-refresh-secret-please-32-chars-min'],
+  ['VNPAY_HASH_SECRET', 'dev-vnpay-secret'],
+  ['MOMO_ACCESS_KEY', 'dev-momo-access'],
+  ['MOMO_SECRET_KEY', 'dev-momo-secret'],
+];
+
 let cached: Env | null = null;
 
 export function getEnv(): Env {
@@ -51,7 +60,18 @@ export function getEnv(): Env {
         `Invalid environment variables:\n${parsed.error.issues.map((i) => `  - ${i.path.join('.')}: ${i.message}`).join('\n')}`,
       );
     }
-    cached = parsed.data;
+    const env = parsed.data;
+
+    if (env.NODE_ENV === 'production') {
+      const offenders = PROD_FORBIDDEN_DEFAULTS.filter(([key, defaultValue]) => env[key] === defaultValue).map(
+        ([key]) => `  - ${key}: default/insecure value in production`,
+      );
+      if (offenders.length > 0) {
+        throw new Error(`Refusing to start in production with insecure configuration:\n${offenders.join('\n')}`);
+      }
+    }
+
+    cached = env;
   }
   return cached;
 }
