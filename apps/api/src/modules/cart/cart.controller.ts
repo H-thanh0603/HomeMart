@@ -2,8 +2,9 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, UnauthorizedExceptio
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
-import { CurrentUser, OptionalAuth } from '../../common/decorators/auth.decorators';
+import { CurrentUser, OptionalAuth, Public } from '../../common/decorators/auth.decorators';
 import { GuestToken } from '../../common/decorators/guest-token.decorator';
+import { createGuestToken, isValidGuestToken } from '../../common/utils/helpers';
 import { CartService } from './cart.service';
 
 export class AddCartItemDto {
@@ -20,6 +21,11 @@ export class UpdateCartItemDto {
   quantity!: number;
 }
 
+export class MergeCartDto {
+  @IsString()
+  guestToken!: string;
+}
+
 @ApiTags('cart')
 @ApiBearerAuth()
 @OptionalAuth() // user có Bearer token hoặc guest qua X-Guest-Token
@@ -27,8 +33,23 @@ export class UpdateCartItemDto {
 export class CartController {
   constructor(private readonly cartService: CartService) {}
 
+  /** Guest tokens must be server-issued (id.hmac) — rejects forged/guessed values. */
+  private assertValidGuestToken(guestToken?: string): string | undefined {
+    if (guestToken && !isValidGuestToken(guestToken)) {
+      throw new UnauthorizedException('Invalid guest token');
+    }
+    return guestToken;
+  }
+
   private async resolveCart(userId?: string, guestToken?: string) {
-    return this.cartService.getOrCreate(userId, guestToken);
+    return this.cartService.getOrCreate(userId, this.assertValidGuestToken(guestToken));
+  }
+
+  @Public()
+  @Get('guest-token')
+  @ApiOperation({ summary: 'Cấp guest token (kèm chữ ký server) cho người dùng ẩn danh' })
+  issueGuestToken() {
+    return { guestToken: createGuestToken() };
   }
 
   @Get()
@@ -81,8 +102,9 @@ export class CartController {
 
   @ApiBearerAuth()
   @Post('merge')
-  merge(@Body() dto: { guestToken: string }, @CurrentUser('id') userId?: string) {
+  merge(@Body() dto: MergeCartDto, @CurrentUser('id') userId?: string) {
     if (!userId) throw new UnauthorizedException('Login required to merge cart');
+    this.assertValidGuestToken(dto.guestToken);
     return this.cartService.mergeGuestCart(userId, dto.guestToken);
   }
 }

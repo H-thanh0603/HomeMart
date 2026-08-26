@@ -57,8 +57,12 @@ export class AuthService {
       this.logger.warn(`Failed login attempt: ${email} ip=${meta?.ip ?? '?'}`);
       throw new UnauthorizedException('Invalid email or password');
     }
-    if (user.status === UserStatus.BANNED) throw new UnauthorizedException('Account is banned');
-    if (user.status === UserStatus.INACTIVE) throw new UnauthorizedException('Account is deactivated');
+    // Generic message — a distinct "banned"/"deactivated" error would confirm
+    // the password was correct and the account exists (enumeration vector).
+    if (user.status === UserStatus.BANNED || user.status === UserStatus.INACTIVE) {
+      this.logger.warn(`Login blocked (${user.status}): ${email} ip=${meta?.ip ?? '?'}`);
+      throw new UnauthorizedException('Account is not available. Contact support if you believe this is a mistake.');
+    }
 
     await this.prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
     const tokens = await this.issueTokens(user.id, user.email, user.role, meta);
@@ -96,12 +100,18 @@ export class AuthService {
       throw new UnauthorizedException('Refresh token not recognized');
     }
     if (stored.revokedAt) {
-      // Token reuse detected → revoke entire chain for this user
-      await this.prisma.refreshToken.updateMany({
-        where: { userId: stored.userId, revokedAt: null },
-        data: { revokedAt: new Date() },
-      });
-      this.logger.warn(`Refresh token reuse detected for user ${stored.userId} — chain revoked`);
+      // Reuse of a rotated token. If it happened within a short grace window
+      // after rotation, it's almost certainly a benign retry (lost response /
+      // double submit) — reject without punishing the whole session chain.
+      // Beyond the window, treat as theft: revoke every session for the user.
+      const recentlyRotated = Date.now() - stored.revokedAt.getTime() < 30_000;
+      if (!recentlyRotated) {
+        await this.prisma.refreshToken.updateMany({
+          where: { userId: stored.userId, revokedAt: null },
+          data: { revokedAt: new Date() },
+        });
+        this.logger.warn(`Refresh token reuse detected for user ${stored.userId} — chain revoked`);
+      }
       throw new UnauthorizedException('Session expired, please login again');
     }
     if (stored.expiresAt < new Date()) throw new UnauthorizedException('Refresh token expired');
