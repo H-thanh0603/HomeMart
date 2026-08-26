@@ -143,11 +143,22 @@ describe('PromotionsService — voucher concurrency (BR-3)', () => {
         endsAt: new Date(Date.now() + 86400e3),
       },
     });
+    // real users — voucher_usages has FKs to users
+    for (const id of ['user-b', 'user-c']) {
+      await prisma.user.upsert({
+        where: { id },
+        update: {},
+        create: { id, email: `${id}-${Date.now()}@test.local`, passwordHash: 'x', fullName: id },
+      });
+    }
   });
 
   afterEach(async () => {
     await prisma.voucherUsage.deleteMany({ where: { voucherId: (await prisma.voucher.findUniqueOrThrow({ where: { code: voucherCode } })).id } }).catch(() => undefined);
     await prisma.voucher.deleteMany({ where: { code: voucherCode } });
+    for (const id of ['user-b', 'user-c']) {
+      await prisma.user.deleteMany({ where: { id, email: { contains: '@test.local' } } }).catch(() => undefined);
+    }
   });
 
   it('validates discount computation with caps', async () => {
@@ -180,7 +191,9 @@ describe('PromotionsService — voucher concurrency (BR-3)', () => {
   it('atomic consume allows exactly ONE winner under concurrency', async () => {
     const voucher = await prisma.voucher.findUniqueOrThrow({ where: { code: voucherCode } });
     const consume = () =>
-      prisma.$transaction((tx) => promotionsService.consumeAtomically(tx as never, voucher.id));
+      prisma.$transaction((tx) =>
+        promotionsService.consumeAtomically(tx as never, voucher.id, 'user-a'),
+      );
 
     const results = await Promise.all([consume(), consume(), consume(), consume()]);
     const winners = results.filter(Boolean);
@@ -188,5 +201,40 @@ describe('PromotionsService — voucher concurrency (BR-3)', () => {
 
     const after = await prisma.voucher.findUniqueOrThrow({ where: { id: voucher.id } });
     expect(after.usedCount).toBe(1);
+  });
+
+  it('atomic consume enforces per-user limit under concurrency', async () => {
+    const voucher = await prisma.voucher.create({
+      data: {
+        code: `${voucherCode}PU`,
+        type: 'PERCENTAGE',
+        value: 10,
+        usageLimit: null, // unlimited globally
+        usageLimitPerUser: 1,
+        minOrderAmount: 0,
+        startsAt: new Date(Date.now() - 1000),
+        endsAt: new Date(Date.now() + 86400e3),
+      },
+    });
+    const consume = (n: number) =>
+      prisma.$transaction(async (tx) => {
+        // Mirror orders.service.checkout: consume, then record the usage row
+        const ok = await promotionsService.consumeAtomically(tx as never, voucher.id, 'user-b');
+        if (!ok) return false;
+        await tx.voucherUsage.create({
+          data: { voucherId: voucher.id, userId: 'user-b', orderId: `pending-${n}` },
+        });
+        return true;
+      });
+
+    const results = await Promise.all([consume(1), consume(2), consume(3)]);
+    const winners = results.filter(Boolean);
+    expect(winners.length).toBe(1); // per-user limit = 1
+
+    // a different user can still consume
+    const otherUser = await prisma.$transaction((tx) =>
+      promotionsService.consumeAtomically(tx as never, voucher.id, 'user-c'),
+    );
+    expect(otherUser).toBe(true);
   });
 });

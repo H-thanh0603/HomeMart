@@ -147,7 +147,7 @@ export class OrdersService {
           // Consume voucher atomically (BR-3)
           let appliedVoucherCode: string | null = null;
           if (voucherId && dto.voucherCode) {
-            const consumed = await this.promotions.consumeAtomically(tx, voucherId);
+            const consumed = await this.promotions.consumeAtomically(tx, voucherId, userId);
             if (!consumed) throw new BusinessRuleError('Voucher is no longer available', 'VOUCHER_LIMIT_REACHED');
             await tx.voucherUsage.create({ data: { voucherId, userId, orderId: 'PENDING' } }); // updated below
             appliedVoucherCode = dto.voucherCode.toUpperCase();

@@ -118,19 +118,39 @@ export class PromotionsService {
   }
 
   /**
-   * Atomic usage increment — guard `usedCount < usageLimit` in SQL to survive concurrency.
-   * Returns false when the limit was reached between validation and apply.
+   * Atomic usage increment — enforces BOTH the global `usageLimit` and the per-user
+   * `usageLimitPerUser` under concurrency.
+   *
+   * Lock-first pattern: `SELECT ... FOR UPDATE` takes a row lock on the voucher that
+   * is held until the surrounding checkout transaction commits, so concurrent
+   * consumers serialize here. Only after locking do we count existing usages —
+   * guaranteeing the per-user count includes rows inserted by transactions that
+   * committed while we were waiting (a plain guarded UPDATE would re-check against
+   * a stale snapshot and let two checkouts slip through).
+   *
+   * Returns false when a limit was reached between validation and apply.
    */
-  async consumeAtomically(tx: Tx, voucherId: string): Promise<boolean> {
-    const rows: { id: string }[] = await tx.$queryRaw`
-      UPDATE vouchers
-      SET "usedCount" = "usedCount" + 1
+  async consumeAtomically(tx: Tx, voucherId: string, userId: string): Promise<boolean> {
+    const locked: { id: string; usageLimitPerUser: number }[] = await tx.$queryRaw`
+      SELECT id, "usageLimitPerUser" FROM vouchers
       WHERE id = ${voucherId}
         AND status = 'ACTIVE'
         AND "endsAt" >= NOW()
         AND ("usageLimit" IS NULL OR "usedCount" < "usageLimit")
+      FOR UPDATE`;
+    const voucher = locked[0];
+    if (!voucher) return false;
+
+    const usage: { count: bigint }[] = await tx.$queryRaw`
+      SELECT COUNT(*) AS count FROM voucher_usages
+      WHERE "voucherId" = ${voucherId} AND "userId" = ${userId}`;
+    if (Number(usage[0]?.count ?? 0) >= voucher.usageLimitPerUser) return false;
+
+    const incremented: { id: string }[] = await tx.$queryRaw`
+      UPDATE vouchers SET "usedCount" = "usedCount" + 1
+      WHERE id = ${voucher.id}
       RETURNING id`;
-    return rows.length === 1;
+    return incremented.length === 1;
   }
 
   /** Refund a consumed voucher when an order is cancelled/refunded. */
