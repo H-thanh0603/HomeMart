@@ -3,7 +3,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { PaymentMethodType } from '@prisma/client';
-import { CurrentUser } from '../../common/decorators/auth.decorators';
+import { CurrentUser, Public } from '../../common/decorators/auth.decorators';
 import { PaymentsService } from './payments.service';
 import { VnpayProvider } from './providers/vnpay.provider';
 import { MomoProvider } from './providers/momo.provider';
@@ -31,8 +31,9 @@ export class PaymentsController {
     return this.paymentsService.getStatus(userId, orderId);
   }
 
-  // ───────── Webhooks (public, signature-verified) ─────────
+  // ───────── Webhooks (public — gated by signature verification, not JWT) ─────────
 
+  @Public()
   @Post('webhook/vnpay')
   async vnpayWebhook(@Body() body: Record<string, unknown>) {
     const normalized = await this.vnpayProvider.verifyCallback(body); // signature verified here
@@ -40,6 +41,7 @@ export class PaymentsController {
   }
 
   /** MoMo sends JSON — verify HMAC-SHA256 signature before processing. */
+  @Public()
   @Post('webhook/momo')
   async momoWebhook(@Body() body: Record<string, unknown>) {
     const normalized = await this.momoProvider.verifyCallback(body); // throws on invalid signature
@@ -47,6 +49,7 @@ export class PaymentsController {
   }
 
   /** Stripe requires raw body for signature verification. */
+  @Public()
   @Post('webhook/stripe')
   async stripeWebhook(@Req() req: RawBodyRequest<Request>) {
     const signature = req.headers['stripe-signature'] as string | undefined;
@@ -62,6 +65,10 @@ export class PaymentsController {
     if (!secret || !header) throw new BadGatewayException('Missing webhook secret or signature');
     const parts = Object.fromEntries(header.split(',').map((kv) => kv.split('=') as [string, string]));
     if (!parts.t || !parts.v1) throw new BadGatewayException('Malformed signature');
+    // Replay window: reject events older than 5 minutes
+    if (Math.abs(Date.now() / 1000 - Number(parts.t)) > 300) {
+      throw new BadGatewayException('Signature timestamp outside tolerance');
+    }
     const expected = createHmac('sha256', secret).update(`${parts.t}.${rawBody}`).digest('hex');
     const a = Buffer.from(expected);
     const b = Buffer.from(parts.v1);

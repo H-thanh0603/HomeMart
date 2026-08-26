@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { createHmac } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { getEnv } from '../../../config/env';
 import { PaymentProvider, CreatePaymentInput, CreatePaymentResult } from '../payment-provider.interface';
 
@@ -57,7 +57,9 @@ export class MomoProvider implements PaymentProvider {
     const p = payload as Record<string, string>;
     const rawSignature = `accessKey=${env.MOMO_ACCESS_KEY}&amount=${p.amount}&extraData=${p.extraData ?? ''}&message=${p.message}&orderId=${p.orderId}&orderInfo=${p.orderInfo}&orderType=${p.orderType}&partnerCode=${p.partnerCode}&payType=${p.payType}&requestId=${p.requestId}&responseTime=${p.responseTime}&resultCode=${p.resultCode}&transId=${p.transId}`;
     const expected = createHmac('sha256', env.MOMO_SECRET_KEY ?? '').update(rawSignature).digest('hex');
-    if (p.signature !== expected) throw new Error('INVALID_MOMO_SIGNATURE');
+    const a = Buffer.from(expected);
+    const b = Buffer.from(String(p.signature ?? ''));
+    if (a.length !== b.length || !timingSafeEqual(a, b)) throw new Error('INVALID_MOMO_SIGNATURE');
 
     return {
       providerTxnId: String(p.transId ?? p.requestId),

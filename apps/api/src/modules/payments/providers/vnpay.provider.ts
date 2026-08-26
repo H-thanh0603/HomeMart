@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { createHmac } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { getEnv } from '../../../config/env';
 import { PaymentProvider, CreatePaymentInput, CreatePaymentResult } from '../payment-provider.interface';
 
@@ -49,7 +49,9 @@ export class VnpayProvider implements PaymentProvider {
       .update(this.queryString(data))
       .digest('hex');
 
-    if (receivedHash !== expected) throw new Error('INVALID_VNPAY_SIGNATURE');
+    const a = Buffer.from(expected);
+    const b = Buffer.from(String(receivedHash ?? ''));
+    if (a.length !== b.length || !timingSafeEqual(a, b)) throw new Error('INVALID_VNPAY_SIGNATURE');
 
     return {
       providerTxnId: String(data.vnp_TxnRef ?? ''),

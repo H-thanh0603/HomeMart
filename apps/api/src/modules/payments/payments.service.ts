@@ -94,14 +94,14 @@ export class PaymentsService {
   async handleWebhook(
     method: PaymentMethodType,
     eventType: string,
-    normalized: { providerTxnId: string; success: boolean; amountVnd: number; orderNumber?: string; raw: Record<string, unknown> },
+    normalized: { providerTxnId: string; success: boolean; amountVnd: number; providerRef?: string; orderNumber?: string; raw: Record<string, unknown> },
   ) {
-    // Locate the payment by our issued reference (robust — no order-number parsing)
-    let payment = normalized.raw
-      ? await this.prisma.payment.findUnique({
-          where: { providerRef: (normalized.raw.providerRef as string) ?? '' },
-        })
-      : null;
+    // Locate the payment by our issued reference (robust — no order-number parsing).
+    // providerRef was stored at createPayment time and is echoed back by every
+    // provider (vnp_TxnRef / orderId / payment_intent id) — raw.providerRef only
+    // exists for internal COD calls.
+    const ref = normalized.providerRef || ((normalized.raw?.providerRef as string) ?? '');
+    let payment = ref ? await this.prisma.payment.findUnique({ where: { providerRef: ref } }) : null;
     if (!payment && normalized.orderNumber) {
       payment = await this.prisma.payment.findFirst({
         where: { order: { orderNumber: normalized.orderNumber } },
