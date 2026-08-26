@@ -89,6 +89,11 @@ enum ShippingMethodCode {
   SAME_DAY
 }
 
+enum TokenPurpose {
+  PASSWORD_RESET
+  EMAIL_VERIFY
+}
+
 enum ShipmentStatus {
   PREPARING
   PICKED_UP
@@ -191,6 +196,7 @@ model PasswordResetToken {
   id        String   @id @default(uuid())
   userId    String
   tokenHash String   @unique
+  purpose   TokenPurpose @default(PASSWORD_RESET)
   expiresAt DateTime
   usedAt    DateTime?
 

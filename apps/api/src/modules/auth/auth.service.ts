@@ -43,7 +43,7 @@ export class AuthService {
     // Email verification token (dev: logged; prod: emailed via listener)
     const verifyToken = randomToken(40);
     await this.prisma.passwordResetToken.create({
-      data: { userId: user.id, tokenHash: sha256(verifyToken), expiresAt: new Date(Date.now() + 24 * 3600e3) },
+      data: { userId: user.id, tokenHash: sha256(verifyToken), purpose: 'EMAIL_VERIFY', expiresAt: new Date(Date.now() + 24 * 3600e3) },
     });
     this.events.emit('auth.registered', { email: user.email, fullName: user.fullName, verifyToken });
 
@@ -134,7 +134,7 @@ export class AuthService {
     if (user) {
       const resetToken = randomToken(40);
       await this.prisma.passwordResetToken.create({
-        data: { userId: user.id, tokenHash: sha256(resetToken), expiresAt: new Date(Date.now() + 3600e3) },
+        data: { userId: user.id, tokenHash: sha256(resetToken), purpose: 'PASSWORD_RESET', expiresAt: new Date(Date.now() + 3600e3) },
       });
       this.events.emit('auth.forgot-password', { email: user.email, fullName: user.fullName, resetToken });
     }
@@ -142,7 +142,7 @@ export class AuthService {
   }
 
   async resetPassword(token: string, newPassword: string) {
-    const record = await this.prisma.passwordResetToken.findUnique({ where: { tokenHash: sha256(token) } });
+    const record = await this.prisma.passwordResetToken.findFirst({ where: { tokenHash: sha256(token), purpose: 'PASSWORD_RESET' } });
     if (!record || record.usedAt || record.expiresAt < new Date()) {
       throw new BadRequestException('Invalid or expired reset token');
     }
@@ -174,7 +174,7 @@ export class AuthService {
   }
 
   async verifyEmail(token: string) {
-    const record = await this.prisma.passwordResetToken.findUnique({ where: { tokenHash: sha256(token) } });
+    const record = await this.prisma.passwordResetToken.findFirst({ where: { tokenHash: sha256(token), purpose: 'EMAIL_VERIFY' } });
     if (!record || record.usedAt || record.expiresAt < new Date()) {
       throw new BadRequestException('Invalid or expired verification token');
     }
