@@ -118,6 +118,7 @@ export class OrdersService {
 
     const shippingQuote = await this.shipping.computeFee({
       methodId: dto.shippingMethodId, subtotal, totalWeightGrams: totalWeight, freeShipping,
+      toProvince: address.province, toDistrict: address.district, toWard: address.ward,
     });
     const shippingFee = shippingQuote.fee;
     const taxRate = Number(process.env.TAX_RATE ?? 0.08);
@@ -211,6 +212,12 @@ export class OrdersService {
 
       this.events.emit('order.created', { orderId: order.id, userId, orderNumber: order.orderNumber, total: order.totalAmount });
       this.logger.log(`Order ${order.orderNumber} created by user ${userId}, total=${order.totalAmount}`);
+
+      // Create carrier shipment asynchronously (non-blocking)
+      this.shipping.createShipment(order.id, dto.shippingMethodId).catch((e) =>
+        this.logger.warn(`Failed to create carrier shipment for ${order.orderNumber}: ${(e as Error).message}`),
+      );
+
       return order;
     } catch (e) {
       if (e instanceof BusinessRuleError || e instanceof NotFoundException || e instanceof ForbiddenException || e instanceof BadRequestException) throw e;

@@ -1,5 +1,5 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { All, Body, Controller, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, IsString } from 'class-validator';
 import { Role } from '@prisma/client';
@@ -55,5 +55,36 @@ export class AdminShippingController {
     @Body() dto: { trackingCode?: string; carrierName?: string; status?: string },
   ) {
     return this.shippingService.updateTracking(id, dto as never);
+  }
+
+  @Post('shipments/:id/create-carrier')
+  @ApiOperation({ summary: '[Admin] Tạo vận đơn trên carrier (GHN)' })
+  createCarrierOrder(@Param('id') shipmentId: string, @Query('carrier') carrier: string) {
+    const shipment = this.shippingService['prisma'].shipment.findUnique({ where: { id: shipmentId } });
+    return shipment.then((s) =>
+      s ? this.shippingService.createShipment(s.orderId, s.methodId, carrier) : null,
+    );
+  }
+}
+
+// ─── Carrier Webhook ───────────────────────────────────────────
+// Public endpoints — carriers POST status updates here.
+// Each carrier has its own route to avoid signature collisions.
+
+@ApiTags('carrier/webhooks')
+@Controller('carrier')
+export class WebhookController {
+  constructor(private readonly shippingService: ShippingService) {}
+
+  @All('ghn/webhook')
+  @ApiOperation({ summary: 'GHN carrier webhook' })
+  async ghnWebhook(@Req() req: { headers: Record<string, string> }, @Body() body: unknown) {
+    return this.shippingService.handleWebhook('GHN', body, req.headers);
+  }
+
+  @All('ghtk/webhook')
+  @ApiOperation({ summary: 'GHTK carrier webhook (placeholder)' })
+  async ghtkWebhook(@Req() req: { headers: Record<string, string> }, @Body() body: unknown) {
+    return this.shippingService.handleWebhook('GHTK', body, req.headers);
   }
 }

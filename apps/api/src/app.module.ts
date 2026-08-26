@@ -21,6 +21,7 @@ import { PaymentsModule } from './modules/payments/payments.module';
 import { PromotionsModule } from './modules/promotions/promotions.module';
 import { ReviewsModule } from './modules/reviews/reviews.module';
 import { ShippingModule } from './modules/shipping/shipping.module';
+import { UploadsModule } from './modules/uploads/uploads.module';
 import { UsersModule } from './modules/users/users.module';
 import { WishlistModule } from './modules/wishlist/wishlist.module';
 
@@ -43,6 +44,7 @@ import { WishlistModule } from './modules/wishlist/wishlist.module';
     PromotionsModule,
     ReviewsModule,
     NotificationsModule,
+    UploadsModule,
   ],
   controllers: [AdminController, AdminOrdersController, AdminInventoryController],
   providers: [

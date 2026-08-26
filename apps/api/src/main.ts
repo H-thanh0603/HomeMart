@@ -28,6 +28,12 @@ async function bootstrap() {
     }),
   );
 
+  // Serve uploaded files from UPLOAD_DIR (for local storage driver)
+  if (env.STORAGE_DRIVER === 'local') {
+    const express = await import('express');
+    app.use('/uploads', express.default.static(env.UPLOAD_DIR, { maxAge: '7d', index: false }));
+  }
+
   app.enableCors({
     origin: [env.WEB_URL],
     credentials: true,
