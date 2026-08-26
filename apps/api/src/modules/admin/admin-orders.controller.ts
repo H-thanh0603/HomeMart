@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
@@ -7,6 +7,7 @@ import { Roles } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/auth.decorators';
 import { Audit } from './audit.decorator';
 import { OrdersService } from '../orders/orders.service';
+import { PaymentsReconcileService } from '../payments/payments-reconcile.service';
 import { PaymentsService } from '../payments/payments.service';
 
 export class AdminListOrdersQuery {
@@ -24,6 +25,7 @@ export class AdminOrdersController {
   constructor(
     private readonly ordersService: OrdersService,
     private readonly paymentsService: PaymentsService,
+    private readonly reconcileService: PaymentsReconcileService,
   ) {}
 
   @Get()
@@ -54,11 +56,18 @@ export class AdminOrdersController {
   @Patch(':id/status')
   @Audit('order.status_update', 'Order')
   async updateStatus(
-    @CurrentUser('id') actorId: string,
+    @CurrentUser() actor: { id: string; role: Role },
     @Param('id') id: string,
     @Body() dto: { status: OrderStatus; note?: string },
   ) {
-    return this.ordersService.transition(id, dto.status, actorId, dto.note);
+    // RETURNED/REFUNDED touches money — require MANAGER+
+    if (
+      (dto.status === OrderStatus.RETURNED || dto.status === OrderStatus.REFUNDED) &&
+      actor.role === Role.STAFF
+    ) {
+      throw new ForbiddenException('Chỉ MANAGER/ADMIN mới được duyệt hoàn hàng / hoàn tiền');
+    }
+    return this.ordersService.transition(id, dto.status, actor.id, dto.note, actor.role);
   }
 
   /** COD collected on delivery. */
@@ -66,5 +75,19 @@ export class AdminOrdersController {
   @Audit('order.cod_confirm', 'Order')
   confirmCod(@Param('id') orderId: string) {
     return this.paymentsService.confirmCodOnDelivery(orderId);
+  }
+
+  @Post(':id/refund-gateway')
+  @Roles(Role.MANAGER)
+  @Audit('order.refund_gateway', 'Order')
+  refundGateway(@Param('id') orderId: string) {
+    return this.paymentsService.refundViaGateway(orderId);
+  }
+
+  @Post('ops/reconcile')
+  @Roles(Role.MANAGER)
+  @ApiOperation({ summary: '[Admin] Đối soát payment vs order (chạy hằng ngày)' })
+  reconcile() {
+    return this.reconcileService.run();
   }
 }

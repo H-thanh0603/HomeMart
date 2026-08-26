@@ -240,4 +240,23 @@ export class PaymentsService {
     }
     return { expired };
   }
+
+  /**
+   * Hoàn tiền qua gateway — scaffold cho production.
+   * Hiện tại chỉ log và trả về stub; khi có credentials thật, thay bằng
+   * gọi API refund của VNPay/MoMo/Stripe tại đây (đã có providerRef + amount).
+   */
+  async refundViaGateway(orderId: string): Promise<{ orderId: string; status: string; gatewayRef?: string }> {
+    const payment = await this.prisma.payment.findUnique({ where: { orderId }, include: { order: true } });
+    if (!payment) throw new NotFoundException('Payment not found');
+    if (payment.status !== PaymentStatus.SUCCESS) {
+      throw new BadRequestException(`Cannot refund payment in status ${payment.status}`);
+    }
+    this.logger.log(`Refund requested for order ${payment.order.orderNumber} via ${payment.method} amount ${payment.amount}`);
+    // TODO: gọi provider.refund(payment.providerRef, payment.amount) khi có merchant API
+    // Ví dụ VNPay: POST https://sandbox.vnpayment.vn/merchant_webapi/api/transaction
+    // Ví dụ MoMo: POST https://test-payment.momo.vn/v2/gateway/api/refund
+    // Ví dụ Stripe: POST https://api.stripe.com/v1/refunds { payment_intent: providerRef }
+    return { orderId, status: 'REFUND_PENDING', gatewayRef: payment.providerRef ?? undefined };
+  }
 }

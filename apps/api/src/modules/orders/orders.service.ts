@@ -289,8 +289,16 @@ export class OrdersService {
 
   /**
    * State-machine transition with optimistic locking + inventory/voucher side effects.
+   * When `actorRole` is STAFF, money-touching transitions (RETURNED/REFUNDED and
+   * cancelling a paid order) are rejected — require MANAGER+.
    */
-  async transition(orderId: string, to: OrderStatus, actorId: string, note?: string) {
+  async transition(
+    orderId: string,
+    to: OrderStatus,
+    actorId: string,
+    note?: string,
+    actorRole?: string,
+  ) {
     return this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({ where: { id: orderId }, include: { items: true } });
       if (!order) throw new NotFoundException('Order not found');
@@ -319,6 +327,10 @@ export class OrdersService {
       if (to === OrderStatus.CANCELLED || to === OrderStatus.RETURNED) {
         const payment = await tx.payment.findUnique({ where: { orderId } });
         const wasPaid = payment && ['SUCCESS'].includes(payment.status);
+        // Money-touching transitions require MANAGER+ when actor is STAFF
+        if (wasPaid && actorRole === 'STAFF' && (to === OrderStatus.CANCELLED || to === OrderStatus.RETURNED)) {
+          throw new ForbiddenException('Chỉ MANAGER/ADMIN mới được duyệt hoàn tiền');
+        }
         if (to === OrderStatus.CANCELLED) {
           if (!wasPaid) {
             // Release reserved stock back
