@@ -217,8 +217,10 @@ export function OrderDetail({ orderId }: { orderId: string }) {
                 <span>Tổng cộng</span>
                 <span className="text-accent-600">{formatCurrency(order.totalAmount)}</span>
               </div>
-              {order.paymentMethod && (
-                <p className="pt-1 text-xs text-slate-400">Phương thức: {order.paymentMethod}</p>
+              {(order.payments?.[0]?.method ?? order.paymentMethod) && (
+                <p className="pt-1 text-xs text-slate-400">
+                  Phương thức: {order.payments?.[0]?.method ?? order.paymentMethod}
+                </p>
               )}
             </CardContent>
           </Card>

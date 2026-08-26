@@ -58,7 +58,7 @@ function ProfileContent() {
   const onSubmit = form.handleSubmit(async (data) => {
     setSaving(true);
     try {
-      const updated = await patchData<User>('/users/me', data);
+      const updated = await patchData<User>('/users/me', { ...data, phone: data.phone || undefined });
       setUser(updated);
       toast.success('Đã cập nhật hồ sơ');
     } catch (err) {

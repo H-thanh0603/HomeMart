@@ -228,6 +228,7 @@ export interface Order {
   cancelledReason?: string | null;
   items: OrderItem[];
   statusHistory?: OrderStatusHistoryEntry[];
+  payments?: { method: PaymentMethodType; status: string }[];
   paymentMethod?: PaymentMethodType;
   createdAt: string;
   updatedAt?: string;
@@ -245,8 +246,5 @@ export interface Wishlist {
   items: WishlistItem[];
 }
 
-export interface CheckoutResult {
-  order?: Order;
-  orderId?: string;
-  redirectUrl?: string;
-}
+/** API returns the created Order object directly (payment session is a separate call). */
+export type CheckoutResult = Order;

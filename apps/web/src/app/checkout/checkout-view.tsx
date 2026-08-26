@@ -8,6 +8,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { CreditCard, MapPin, ShoppingBag, Wallet } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth-store';
+import { postData } from '@/lib/api';
 import {
   useAddresses,
   useCart,
@@ -165,16 +166,31 @@ export function CheckoutView() {
         note: note.trim() || undefined,
       },
       {
-        onSuccess: (result) => {
+        onSuccess: async (order) => {
           setCount(0);
           toast.success('Đặt hàng thành công!');
-          const orderId = result.order?.id ?? result.orderId;
-          if (result.redirectUrl) {
-            window.location.href = result.redirectUrl;
-          } else if (orderId) {
-            router.push(`/orders/${orderId}`);
-          } else {
-            router.push('/account/orders');
+          if (paymentMethod === 'COD') {
+            router.push(`/orders/${order.id}`);
+            return;
+          }
+          // Non-COD: open a payment session and follow the gateway redirect
+          try {
+            const { orderId, payment } = await postData<{
+              orderId: string;
+              payment: { redirectUrl?: string; instructions?: string };
+            }>(`/payments/orders/${order.id}/create`);
+            if (payment?.redirectUrl) {
+              window.location.href = payment.redirectUrl;
+              return;
+            }
+            if (payment?.instructions) {
+              toast.info(payment.instructions);
+            }
+            router.push(`/orders/${orderId ?? order.id}`);
+          } catch {
+            // Payment session failed — order stays PENDING, user can retry from the order page
+            toast.error('Không tạo được phiên thanh toán, bạn có thể thử lại trong chi tiết đơn hàng');
+            router.push(`/orders/${order.id}`);
           }
         },
         onError: (err) => toast.error(err.message),

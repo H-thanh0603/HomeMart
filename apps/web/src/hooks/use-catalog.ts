@@ -1,7 +1,7 @@
 'use client';
 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getData, getPage, patchData, deleteData, postData } from '@/lib/api';
+import { getData, getPage, patchData, deleteData, postData, putData } from '@/lib/api';
 import type {
   Address,
   Cart,
@@ -26,7 +26,7 @@ export interface ProductListParams {
   q?: string;
 }
 
-export function useProducts(params: ProductListParams) {
+export function useProducts(params: ProductListParams, enabled = true) {
   return useQuery({
     queryKey: ['products', params],
     queryFn: () =>
@@ -35,6 +35,7 @@ export function useProducts(params: ProductListParams) {
         params,
       }),
     placeholderData: keepPreviousData,
+    enabled,
   });
 }
 
@@ -227,7 +228,7 @@ export function useDeleteAddress() {
 export function useSetDefaultAddress() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => patchData<Address>(`/users/me/addresses/${id}/default`, {}),
+    mutationFn: (id: string) => putData<Address>(`/users/me/addresses/${id}/default`),
     onSuccess: () => invalidateAddresses(queryClient),
   });
 }

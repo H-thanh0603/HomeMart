@@ -138,6 +138,11 @@ export async function patchData<T>(url: string, body?: unknown): Promise<T> {
   return res.data.data;
 }
 
+export async function putData<T>(url: string, body?: unknown): Promise<T> {
+  const res = await api.put<ApiEnvelope<T>>(url, body);
+  return res.data.data;
+}
+
 export async function deleteData<T>(url: string): Promise<T> {
   const res = await api.delete<ApiEnvelope<T>>(url);
   return res.data.data;
