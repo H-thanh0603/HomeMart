@@ -319,10 +319,18 @@ export class OrdersService {
       if (to === OrderStatus.CANCELLED || to === OrderStatus.RETURNED) {
         const payment = await tx.payment.findUnique({ where: { orderId } });
         const wasPaid = payment && ['SUCCESS'].includes(payment.status);
-        if (!wasPaid && to === OrderStatus.CANCELLED) {
-          // Release reserved stock back
-          await this.inventory.release(tx, reserveItems, order.orderNumber);
-          if (order.voucherCode) await this.promotions.refundUsage(tx, order.voucherCode);
+        if (to === OrderStatus.CANCELLED) {
+          if (!wasPaid) {
+            // Release reserved stock back
+            await this.inventory.release(tx, reserveItems, order.orderNumber);
+            if (order.voucherCode) await this.promotions.refundUsage(tx, order.voucherCode);
+          } else {
+            // Paid order cancelled → must refund, not strand stock/payment
+            await tx.payment.update({ where: { orderId }, data: { status: 'REFUNDED' } });
+            await this.inventory.release(tx, reserveItems, order.orderNumber);
+            if (order.voucherCode) await this.promotions.refundUsage(tx, order.voucherCode);
+            this.events.emit('refund.succeeded', { orderId, userId: order.userId });
+          }
         }
         if (wasPaid && to === OrderStatus.RETURNED) {
           await tx.payment.update({ where: { orderId }, data: { status: 'REFUNDED' } });

@@ -1,4 +1,4 @@
-import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nestjs/common';
+import { CallHandler, ExecutionContext, Injectable, Logger, NestInterceptor } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Observable, tap } from 'rxjs';
 import { PrismaService } from '../../infra/prisma.service';
@@ -22,6 +22,11 @@ export class AuditInterceptor implements NestInterceptor {
 
     return next.handle().pipe(
       tap(() => {
+        // Redact sensitive fields before persisting raw bodies
+        const body = { ...(request.body ?? {}) };
+        for (const key of ['password', 'newPassword', 'currentPassword', 'refreshToken', 'token']) {
+          if (key in body) body[key] = '[REDACTED]';
+        }
         this.prisma.auditLog
           .create({
             data: {
@@ -29,11 +34,14 @@ export class AuditInterceptor implements NestInterceptor {
               action: meta.action,
               entity: meta.entity,
               entityId,
-              after: { body: request.body ?? null } as object,
+              after: { body } as object,
               ip: request.ip,
             },
           })
-          .catch(() => undefined); // never break request on audit failure
+          .catch((e) => {
+            // Never break the request, but never lose the trace silently either
+            Logger.warn(`Audit log write failed for ${meta.action}: ${e?.message ?? e}`, 'AuditInterceptor');
+          });
       }),
     );
   }
