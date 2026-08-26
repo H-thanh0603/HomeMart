@@ -12,6 +12,7 @@ const cartInclude = {
         select: {
           id: true, name: true, slug: true, sku: true, price: true, compareAtPrice: true,
           images: { where: { isPrimary: true }, take: 1 },
+          inventory: { select: { availableStock: true } },
         },
       },
       variant: { include: { inventory: true } },

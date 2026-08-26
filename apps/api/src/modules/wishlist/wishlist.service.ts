@@ -11,8 +11,10 @@ export class WishlistService {
       include: {
         product: {
           select: {
-            id: true, name: true, slug: true, price: true, compareAtPrice: true, ratingAvg: true,
+            id: true, name: true, slug: true, sku: true, price: true, compareAtPrice: true, ratingAvg: true,
+            soldCount: true, reviewCount: true,
             images: { where: { isPrimary: true }, take: 1 },
+            inventory: { select: { availableStock: true } },
           },
         },
       },
