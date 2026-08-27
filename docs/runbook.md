@@ -6,17 +6,15 @@
 ```json
 {"status":"ok","services":{"api":"up","db":"up","redis":"up"},"timestamp":"..."}
 ```
-`status` là `degraded` khi `db` ≠ `up` (redis `down` vẫn chạy degraded).
+`status` là `degraded` khi `db` ≠ `up` (redis `down` vẫn chạy degraded). Nginx cũng expose `GET /health` alias `docker/nginx.conf:50`.
 
 **Alert khuyến nghị (cron 1 phút):**
 ```bash
-# /etc/cron.d/homemart-health
-* * * * * root curl -sf http://localhost/api/v1/health | grep -q '"status":"ok"' || \
-  curl -X POST -H 'Content-Type: application/json' \
-  -d '{"text":"[ALERT] HomeMart health != ok"}' "$SLACK_WEBHOOK_URL"
+# /opt/homemart/docker/health-check.sh đã có sẵn
+* * * * * root API_URL=http://localhost/api/v1 SLACK_WEBHOOK_URL=$SLACK_WEBHOOK_URL /opt/homemart/docker/health-check.sh
 ```
 
-Hoặc dùng UptimeRobot / BetterStack trỏ vào `/api/v1/health`.
+Hoặc dùng UptimeRobot / BetterStack trỏ vào `/api/v1/health` (hoặc `/health` qua nginx).
 
 ## 2. Đối soát hằng ngày
 
@@ -53,7 +51,7 @@ docker compose exec postgres psql -U homemart -c "DROP DATABASE homemart_restore
 ## 4. Hoàn tiền
 
 - STAFF **không** được duyệt `RETURNED/REFUNDED` hay hủy đơn đã thanh toán — chỉ MANAGER/ADMIN (đã enforce trong `admin-orders.controller` + `orders.service`).
-- Hoàn tiền gateway: `POST /api/v1/admin/orders/:id/refund-gateway` (MANAGER) — hiện log stub, cần thay bằng gọi API VNPay/MoMo/Stripe khi có merchant credentials.
+- Hoàn tiền gateway: `POST /api/v1/admin/orders/:id/refund-gateway` (MANAGER) — gọi API refund thật VNPay/MoMo/Stripe `apps/api/src/modules/payments/payments.service.ts:249`, ghi `PaymentTransaction(eventType=refund)`, đổi `payment.status=REFUNDED`. Với COD/BANK_TRANSFER thì REFUNDED ngay không cần gateway.
 
 ## 5. Xoay secrets
 
