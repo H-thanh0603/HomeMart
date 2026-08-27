@@ -242,9 +242,8 @@ export class PaymentsService {
   }
 
   /**
-   * Hoàn tiền qua gateway — scaffold cho production.
-   * Hiện tại chỉ log và trả về stub; khi có credentials thật, thay bằng
-   * gọi API refund của VNPay/MoMo/Stripe tại đây (đã có providerRef + amount).
+   * Hoàn tiền qua gateway — gọi API refund thật của VNPay/MoMo/Stripe.
+   * COD/BANK_TRANSFER: không cần gateway, chỉ đổi status + phát event.
    */
   async refundViaGateway(orderId: string): Promise<{ orderId: string; status: string; gatewayRef?: string }> {
     const payment = await this.prisma.payment.findUnique({ where: { orderId }, include: { order: true } });
@@ -252,11 +251,43 @@ export class PaymentsService {
     if (payment.status !== PaymentStatus.SUCCESS) {
       throw new BadRequestException(`Cannot refund payment in status ${payment.status}`);
     }
-    this.logger.log(`Refund requested for order ${payment.order.orderNumber} via ${payment.method} amount ${payment.amount}`);
-    // TODO: gọi provider.refund(payment.providerRef, payment.amount) khi có merchant API
-    // Ví dụ VNPay: POST https://sandbox.vnpayment.vn/merchant_webapi/api/transaction
-    // Ví dụ MoMo: POST https://test-payment.momo.vn/v2/gateway/api/refund
-    // Ví dụ Stripe: POST https://api.stripe.com/v1/refunds { payment_intent: providerRef }
-    return { orderId, status: 'REFUND_PENDING', gatewayRef: payment.providerRef ?? undefined };
+    if (!payment.providerRef) throw new BadRequestException('Payment has no providerRef — cannot refund');
+    if (payment.method === 'COD' || payment.method === 'BANK_TRANSFER') {
+      await this.prisma.payment.update({ where: { id: payment.id }, data: { status: 'REFUNDED' } });
+      await this.prisma.paymentTransaction.create({
+        data: {
+          paymentId: payment.id,
+          providerTxnId: `manual-${payment.providerRef}`,
+          eventType: 'refund',
+          payload: { method: payment.method, orderNumber: payment.order.orderNumber, manual: true } as object,
+          signatureValid: true,
+        },
+      });
+      this.events.emit('refund.succeeded', { orderId, orderNumber: payment.order.orderNumber, method: payment.method });
+      this.logger.log(`Refund (no gateway) for COD ${payment.order.orderNumber}`);
+      return { orderId, status: 'REFUNDED', gatewayRef: payment.providerRef };
+    }
+
+    const provider = this.providers.get(payment.method as PaymentMethodType);
+    if (!provider?.refund) throw new BadRequestException(`Refund not supported for ${payment.method}`);
+    try {
+      const result = await provider.refund(payment.providerRef, payment.amount, payment.order.orderNumber);
+      await this.prisma.payment.update({ where: { id: payment.id }, data: { status: 'REFUNDED' } });
+      await this.prisma.paymentTransaction.create({
+        data: {
+          paymentId: payment.id,
+          providerTxnId: result.gatewayRef,
+          eventType: 'refund',
+          payload: (result.raw ?? { gatewayRef: result.gatewayRef }) as object,
+          signatureValid: true,
+        },
+      });
+      this.events.emit('refund.succeeded', { orderId, orderNumber: payment.order.orderNumber, gatewayRef: result.gatewayRef });
+      this.logger.log(`Refund SUCCESS ${payment.order.orderNumber} via ${payment.method} → ${result.gatewayRef}`);
+      return { orderId, status: 'REFUNDED', gatewayRef: result.gatewayRef };
+    } catch (e) {
+      this.logger.error(`Refund FAILED ${payment.order.orderNumber}: ${(e as Error).message}`);
+      throw new BadRequestException(`Refund failed: ${(e as Error).message}`);
+    }
   }
 }

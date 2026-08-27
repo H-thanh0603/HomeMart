@@ -70,6 +70,40 @@ export class VnpayProvider implements PaymentProvider {
       .join('&');
   }
 
+  async refund(providerRef: string, amountVnd: number, orderNumber: string) {
+    const env = getEnv();
+    if (!env.VNPAY_HASH_SECRET || env.VNPAY_HASH_SECRET.startsWith('dev-')) {
+      throw new Error('VNPay refund requires production VNPAY_HASH_SECRET + VNPAY_TMN_CODE');
+    }
+    const date = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const createDate = `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
+    const params: Record<string, string> = {
+      vnp_RequestId: `${Date.now()}`,
+      vnp_Version: '2.1.0',
+      vnp_Command: 'refund',
+      vnp_TmnCode: env.VNPAY_TMN_CODE ?? '',
+      vnp_TransactionType: '02', // 02 = refund toàn phần
+      vnp_TxnRef: providerRef,
+      vnp_Amount: String(amountVnd * 100),
+      vnp_OrderInfo: `Refund ${orderNumber}`,
+      vnp_TransactionDate: createDate,
+      vnp_CreateBy: 'HomeMart',
+      vnp_CreateDate: createDate,
+      vnp_IpAddr: '127.0.0.1',
+    };
+    const signed = this.signParams(params, env.VNPAY_HASH_SECRET ?? '');
+    const res = await fetch('https://sandbox.vnpayment.vn/merchant_webapi/api/transaction', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(signed),
+      signal: AbortSignal.timeout(15000),
+    });
+    const data = (await res.json()) as { vnp_ResponseCode?: string; vnp_Message?: string };
+    if (data.vnp_ResponseCode !== '00') throw new Error(`VNPay refund failed: ${data.vnp_ResponseCode} ${data.vnp_Message ?? ''}`);
+    return { gatewayRef: providerRef, raw: data };
+  }
+
   private signParams(params: Record<string, string>, secret: string): Record<string, string> {
     const sorted = Object.keys(params)
       .filter((k) => params[k] !== undefined && params[k] !== '')

@@ -31,4 +31,6 @@ export interface PaymentProvider {
     providerRef: string;
     raw: Record<string, unknown>;
   }>;
+  /** Refund a captured payment. Throw when gateway rejects. */
+  refund?(providerRef: string, amountVnd: number, orderNumber: string): Promise<{ gatewayRef: string; raw?: unknown }>;
 }

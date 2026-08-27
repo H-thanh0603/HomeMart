@@ -61,4 +61,19 @@ export class StripeProvider implements PaymentProvider {
       orderNumber: metadata.orderNumber ?? '',
     };
   }
+
+  async refund(providerRef: string) {
+    const key = process.env.STRIPE_SECRET_KEY;
+    if (!key) throw new Error('Stripe refund requires STRIPE_SECRET_KEY');
+    const body = new URLSearchParams({ payment_intent: providerRef });
+    const res = await fetch('https://api.stripe.com/v1/refunds', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+      signal: AbortSignal.timeout(15000),
+    });
+    const data = (await res.json()) as { id?: string; error?: { message?: string } };
+    if (!res.ok) throw new Error(`Stripe refund failed: ${data.error?.message ?? JSON.stringify(data)}`);
+    return { gatewayRef: data.id ?? providerRef, raw: data };
+  }
 }

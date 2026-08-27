@@ -69,4 +69,33 @@ export class MomoProvider implements PaymentProvider {
       raw: payload,
     };
   }
+
+  async refund(providerRef: string, amountVnd: number, orderNumber: string) {
+    const env = getEnv();
+    if (!env.MOMO_SECRET_KEY || env.MOMO_SECRET_KEY.startsWith('dev-')) {
+      throw new Error('MoMo refund requires production MOMO_ACCESS_KEY + MOMO_SECRET_KEY');
+    }
+    const requestId = `${providerRef}-refund-${Date.now()}`;
+    const rawSignature = `accessKey=${env.MOMO_ACCESS_KEY}&amount=${amountVnd}&description=Refund ${orderNumber}&orderId=${providerRef}&partnerCode=${env.MOMO_PARTNER_CODE}&requestId=${requestId}&transId=${providerRef}`;
+    const signature = createHmac('sha256', env.MOMO_SECRET_KEY ?? '').update(rawSignature).digest('hex');
+    const body = {
+      partnerCode: env.MOMO_PARTNER_CODE,
+      requestId,
+      orderId: providerRef,
+      amount: amountVnd,
+      transId: providerRef,
+      lang: 'vi',
+      description: `Refund ${orderNumber}`,
+      signature,
+    };
+    const res = await fetch('https://test-payment.momo.vn/v2/gateway/api/refund', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(15000),
+    });
+    const data = (await res.json()) as { resultCode?: number; message?: string };
+    if (data.resultCode !== 0) throw new Error(`MoMo refund failed: ${data.resultCode} ${data.message ?? ''}`);
+    return { gatewayRef: requestId, raw: data };
+  }
 }
