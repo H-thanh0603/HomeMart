@@ -45,7 +45,17 @@ export const options = {
     http_req_duration: ['p(95)<5000'],
     checkout_success: ['rate>0.95'],
   },
+  setupTimeout: '30s',
 };
+
+export function setup() {
+  const health = http.get(`${API_URL}/health`);
+  if (health.status !== 200) {
+    console.warn(`⚠ API health check failed at ${API_URL}/health: ${health.status} ${health.body} — k6 will still run but expect 0% if API down`);
+  } else {
+    console.log(`✓ API health OK at ${API_URL}`);
+  }
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 
@@ -77,13 +87,18 @@ function registerAndLogin(email) {
   return regBody?.data?.accessToken ?? regBody?.accessToken;
 }
 
+function safeJson(res) {
+  try { return JSON.parse(res.body); } catch { return {}; }
+}
+
 function getDefaultAddress(token) {
   const res = http.get(`${API_URL}/addresses`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  const body = JSON.parse(res.body);
-  const addresses = body?.data?.items ?? body?.data ?? [];
-  return addresses[0]?.id;
+  if (res.status !== 200) return null;
+  const body = safeJson(res);
+  const addresses = body?.data?.items ?? body?.data ?? body?.items ?? [];
+  return Array.isArray(addresses) ? addresses[0]?.id : null;
 }
 
 function createAddress(token) {
@@ -101,15 +116,17 @@ function createAddress(token) {
       Authorization: `Bearer ${token}`,
     },
   });
-  const body = JSON.parse(res.body);
-  return body?.data?.id;
+  if (res.status !== 200 && res.status !== 201) return null;
+  const body = safeJson(res);
+  return body?.data?.id ?? body?.id;
 }
 
 function getShippingMethod() {
   const res = http.get(`${API_URL}/shipping/methods`);
-  const body = JSON.parse(res.body);
-  const methods = body?.data ?? body;
-  return methods[0]?.id;
+  if (res.status !== 200) return null;
+  const body = safeJson(res);
+  const methods = body?.data?.items ?? body?.data ?? body;
+  return Array.isArray(methods) ? methods[0]?.id : methods?.id;
 }
 
 function addToCart(token, productId) {
@@ -126,9 +143,10 @@ function addToCart(token, productId) {
 
 function getRandomProduct() {
   const res = http.get(`${API_URL}/products?limit=50&status=PUBLISHED`);
-  const body = JSON.parse(res.body);
-  const products = body?.data?.items ?? body?.data ?? [];
-  if (!products.length) return null;
+  if (res.status !== 200) return null;
+  const body = safeJson(res);
+  const products = body?.data?.items ?? body?.data ?? body?.items ?? [];
+  if (!Array.isArray(products) || !products.length) return null;
   return products[Math.floor(Math.random() * products.length)];
 }
 
