@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { OrderStatus, ShipmentStatus } from '@prisma/client';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../infra/prisma.service';
+import { RedisService } from '../../infra/redis.service';
 import { CarrierProvider } from './carrier-provider.interface';
 import { GhnProvider } from './providers/ghn.provider';
 
@@ -23,6 +24,7 @@ export class ShippingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly events: EventEmitter2,
+    private readonly redis: RedisService,
   ) {
     this.carriers = new Map();
     // Register carriers — add more here when adding GHTK/Viettel Post etc.
@@ -50,9 +52,14 @@ export class ShippingService {
       return { fee: 0, estimatedDaysMin: method.estimatedDaysMin, estimatedDaysMax: method.estimatedDaysMax };
     }
 
-    // Try carrier API first, fall back to formula
+    // Try carrier API first, fall back to formula — cache 1h trong Redis
     const defaultCarrier = this.carriers.values().next().value;
     if (defaultCarrier && input.toProvince && input.toDistrict) {
+      const cacheKey = `ship:fee:${method.code}:${input.toProvince}:${input.toDistrict}:${input.toWard ?? ''}:${input.totalWeightGrams}`;
+      const cached = await this.redis.get(cacheKey);
+      if (cached) {
+        try { return JSON.parse(cached) as { fee: number; estimatedDaysMin: number; estimatedDaysMax: number }; } catch { /* ignore */ }
+      }
       try {
         const carrierFee = await defaultCarrier.calculateFee({
           serviceType: method.code,
@@ -63,11 +70,13 @@ export class ShippingService {
           toWard: input.toWard ?? '',
           weightGrams: input.totalWeightGrams,
         });
-        return {
+        const result = {
           fee: carrierFee.fee,
           estimatedDaysMin: carrierFee.estimatedDaysMin,
           estimatedDaysMax: carrierFee.estimatedDaysMax,
         };
+        await this.redis.set(cacheKey, JSON.stringify(result), 3600);
+        return result;
       } catch (e) {
         this.logger.warn(`Carrier API failed, falling back to formula: ${(e as Error).message}`);
       }

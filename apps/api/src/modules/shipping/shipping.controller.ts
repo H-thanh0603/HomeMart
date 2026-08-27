@@ -26,6 +26,28 @@ export class ShippingController {
   methods() {
     return this.shippingService.listMethods();
   }
+
+  @Public() @Get('shipping/quote')
+  @ApiOperation({ summary: 'Preview phí ship trước login — cache 1h (GHN)' })
+  quote(
+    @Query('methodId') methodId: string,
+    @Query('subtotal') subtotal = '0',
+    @Query('weightGrams') weightGrams = '500',
+    @Query('toProvince') toProvince?: string,
+    @Query('toDistrict') toDistrict?: string,
+    @Query('toWard') toWard?: string,
+  ) {
+    if (!methodId) throw new Error('methodId required');
+    return this.shippingService.computeFee({
+      methodId,
+      subtotal: Number(subtotal) || 0,
+      totalWeightGrams: Number(weightGrams) || 500,
+      freeShipping: false,
+      toProvince,
+      toDistrict,
+      toWard,
+    });
+  }
 }
 
 @ApiTags('admin/shipping')
