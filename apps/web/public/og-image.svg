@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f172a"/><stop offset="55%" stop-color="#1e40af"/><stop offset="100%" stop-color="#38bdf8"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#g)"/>
+  <g opacity="0.18" fill="none" stroke="#fff" stroke-width="2">
+    <rect x="840" y="90" width="240" height="240" rx="32"/><rect x="900" y="150" width="120" height="120" rx="16"/>
+    <circle cx="980" cy="420" r="70"/><circle cx="980" cy="420" r="28"/>
+  </g>
+  <g transform="translate(64 84)">
+    <g>
+      <rect width="72" height="72" rx="18" fill="#fff"/>
+      <path d="M36 18 L54 32 H48 V54 H24 V32 H18 Z M30 40 h12 v14 h-12 Z" fill="#1d4ed8"/>
+    </g>
+    <text x="0" y="132" font-family="system-ui, -apple-system, sans-serif" font-size="54" font-weight="800" fill="#fff">HomeMart</text>
+    <text x="0" y="172" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="600" fill="#fff" opacity="0.95">Siêu thị gia dụng trực tuyến — Giao nhanh toàn quốc</text>
+    <text x="0" y="206" font-family="system-ui, -apple-system, sans-serif" font-size="16" fill="#fff" opacity="0.8">Nhà bếp · Điện gia dụng · Vệ sinh · Nội thất nhỏ · Nhà thông minh</text>
+    <g transform="translate(0 242)">
+      <rect width="220" height="44" rx="22" fill="#fff"/>
+      <text x="110" y="29" text-anchor="middle" font-family="system-ui, sans-serif" font-size="15" font-weight="700" fill="#1e40af">homemart.vn</text>
+      <text x="240" y="29" font-family="system-ui, sans-serif" font-size="14" fill="#fff" opacity="0.85"> · Freeship đơn từ 500K · Đổi trả 7 ngày</text>
+    </g>
+  </g>
+</svg>

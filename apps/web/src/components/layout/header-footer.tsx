@@ -294,9 +294,10 @@ export function Footer() {
           <FooterCol
             title="Chính sách"
             links={[
-              { href: '/policies', label: 'Chính sách đổi trả' },
-              { href: '/policies#shipping', label: 'Chính sách giao hàng' },
-              { href: '/policies#privacy', label: 'Bảo mật thông tin' },
+              { href: '/policies#return', label: 'Đổi trả 7 ngày' },
+              { href: '/policies#warranty', label: 'Bảo hành' },
+              { href: '/policies#vat', label: 'Giá & VAT' },
+              { href: '/policies#privacy', label: 'Bảo mật' },
             ]}
           />
           <FooterCol
