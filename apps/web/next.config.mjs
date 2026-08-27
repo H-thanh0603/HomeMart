@@ -27,6 +27,9 @@ const nextConfig = {
       { protocol: 'http', hostname: 'localhost' },
       { protocol: 'https', hostname: '**' },
     ],
+    formats: ['image/avif', 'image/webp'],
+    dangerouslyAllowSVG: true,
+    contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
   },
 };
 

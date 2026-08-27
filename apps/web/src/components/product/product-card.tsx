@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { Heart } from 'lucide-react';
 import { Price } from './price';
@@ -53,13 +54,13 @@ export function ProductCard({ product }: { product: Product }) {
       </button>
 
       <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-slate-50">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
         {image ? (
-          <img
+          <Image
             src={image.url}
             alt={image.alt ?? product.name}
-            loading="lazy"
-            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+            fill
+            sizes="(max-width: 768px) 50vw, 25vw"
+            className="object-cover transition-transform duration-300 group-hover:scale-105"
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-slate-300">
