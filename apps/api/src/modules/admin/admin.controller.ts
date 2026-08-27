@@ -45,6 +45,12 @@ export class AdminController {
     return this.adminService.topCategories(effFrom, effTo);
   }
 
+  @Get('reports/soft-launch') @Roles(Role.MANAGER)
+  @ApiOperation({ summary: '[Admin] 4.3 soft-launch 3 metrics (checkout/on-time/returns)' })
+  softLaunch(@Query('from') from?: string, @Query('to') to?: string) {
+    return this.adminService.softLaunchMetrics(from, to);
+  }
+
   @Get('audit-logs') @Roles(Role.ADMIN)
   auditLogs(@Query('page') page = '1', @Query('limit') limit = '50') {
     return this.adminService.getAuditLogs(clampPage(page), clampLimit(limit, 50));

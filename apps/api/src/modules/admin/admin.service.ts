@@ -126,4 +126,59 @@ export class AdminService {
     ]);
     return { items, total, page, limit };
   }
+
+  /** 4.3 soft-launch 3 metrics: checkout>95% · giao đúng hẹn>90% · đổi trả<5% */
+  async softLaunchMetrics(from?: string, to?: string) {
+    const fromDate = from ? new Date(from) : new Date(Date.now() - 30 * 86400e3);
+    const toDate = to ? new Date(to) : new Date();
+    const where = { createdAt: { gte: fromDate, lte: toDate }, deletedAt: null } as const;
+
+    const [totalOrders, cancelledOrders, deliveredOrders, onTimeDelivered, returnRequested] = await Promise.all([
+      this.prisma.order.count({ where }),
+      this.prisma.order.count({ where: { ...where, status: 'CANCELLED' } }),
+      this.prisma.order.count({ where: { ...where, status: { in: ['DELIVERED', 'COMPLETED'] as never } } }),
+      // Giao đúng hẹn: shipment.deliveredAt <= order.createdAt + estimatedDaysMax (fallback 5 ngày)
+      this.prisma.shipment.count({
+        where: {
+          deliveredAt: { not: null },
+          order: { createdAt: { gte: fromDate, lte: toDate }, deletedAt: null },
+        },
+      }),
+      this.prisma.order.count({ where: { ...where, status: { in: ['RETURN_REQUESTED', 'RETURNED', 'REFUNDED'] as never } } }),
+    ]);
+
+    // Tính đúng hẹn thực tế bằng query raw nếu có deliveredAt
+    const onTimeRows = await this.prisma.$queryRaw<{ on_time: bigint; total_delivered: bigint }[]>`
+      SELECT
+        COUNT(CASE WHEN s."deliveredAt" <= o."createdAt" + (m."estimatedDaysMax" || ' days')::interval THEN 1 END)::bigint AS on_time,
+        COUNT(*)::bigint AS total_delivered
+      FROM shipments s
+      JOIN orders o ON o.id = s."orderId"
+      JOIN shipping_methods m ON m.id = s."methodId"
+      WHERE o."createdAt" BETWEEN ${fromDate} AND ${toDate}
+        AND o."deletedAt" IS NULL AND s."deliveredAt" IS NOT NULL
+    `;
+
+    const totalDelivered = Number(onTimeRows[0]?.total_delivered ?? deliveredOrders);
+    const onTime = Number(onTimeRows[0]?.on_time ?? onTimeDelivered);
+    const checkoutSuccessRate = totalOrders ? (totalOrders - cancelledOrders) / totalOrders : 1;
+    const onTimeRate = totalDelivered ? onTime / totalDelivered : 1;
+    const returnRate = totalOrders ? returnRequested / totalOrders : 0;
+
+    return {
+      period: { from: fromDate.toISOString(), to: toDate.toISOString() },
+      totals: { totalOrders, cancelledOrders, deliveredOrders: totalDelivered, returnRequested },
+      metrics: {
+        checkoutSuccessRate, // >0.95
+        onTimeRate,          // >0.90
+        returnRate,          // <0.05
+      },
+      gates: {
+        checkout: checkoutSuccessRate > 0.95,
+        onTime: onTimeRate > 0.90,
+        returns: returnRate < 0.05,
+        allPass: checkoutSuccessRate > 0.95 && onTimeRate > 0.90 && returnRate < 0.05,
+      },
+    };
+  }
 }
