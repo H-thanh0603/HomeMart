@@ -1,13 +1,15 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Flame, Sparkles } from 'lucide-react';
+import { ArrowRight, Flame, Sparkles } from 'lucide-react';
 import { useCategories, useProducts } from '@/hooks/use-catalog';
 import { ProductGrid } from '@/components/product/product-card';
 import { ProductGridSkeleton } from '@/components/ui/skeleton';
 import { ErrorState, EmptyState } from '@/components/ui/empty-state';
 import { Pagination } from '@/components/ui/pagination';
+import { getCategoryTheme, MOTIFS } from '@/lib/category-themes';
+import { cn } from '@/lib/utils';
 
 function SectionHeader({
   icon,
@@ -42,16 +44,18 @@ function ProductSection({
   limit = 8,
   icon,
   href,
+  categoryId,
 }: {
   title: string;
   sort: 'best_selling' | 'newest' | 'rating' | 'price_asc';
   limit?: number;
   icon?: React.ReactNode;
   href?: string;
+  categoryId?: string;
 }) {
   const sectionRef = useRef<HTMLElement>(null);
   const [page, setPage] = useState(1);
-  const { data, isLoading, isError, refetch } = useProducts({ sort, limit, page });
+  const { data, isLoading, isError, refetch } = useProducts({ sort, limit, page, categoryId });
   const products = data?.data ?? [];
   const totalPages = data?.meta?.totalPages ?? 1;
 
@@ -122,40 +126,81 @@ function CategoryGrid() {
   );
 }
 
+const FEATURED_SLUG = process.env.NEXT_PUBLIC_FEATURED_CATEGORY ?? 'nha-bep';
+
 export default function HomePage() {
+  const { data: categories } = useCategories();
+  const theme = getCategoryTheme(FEATURED_SLUG);
+  const Icon = theme.icon;
+  const featuredCategory = useMemo(
+    () => (categories ?? []).find((c) => c.slug === FEATURED_SLUG),
+    [categories],
+  );
+
   return (
     <div>
-      {/* Hero banner */}
+      {/* Hero — ngách hẹp 4.1: 1 câu duy nhất thay vì dàn 106 sp */}
       <section
-        aria-label="Khuyến mãi nổi bật"
-        className="relative overflow-hidden rounded-xl bg-gradient-to-r from-primary-700 via-primary-600 to-emerald-400 px-6 py-10 text-white shadow-card md:px-12 md:py-16"
+        aria-label={theme.title}
+        className="relative overflow-hidden rounded-xl text-white shadow-card"
+        style={{ background: `linear-gradient(120deg, ${theme.heroGradient[0]}, ${theme.heroGradient[1]} 55%, ${theme.heroGradient[2]})` }}
       >
-        <div className="relative z-10 max-w-xl">
-          <p className="mb-2 inline-block rounded-full bg-white/15 px-3 py-1 text-xs font-semibold uppercase tracking-wide backdrop-blur">
-            Ưu đãi tháng này
+        <div aria-hidden className="absolute inset-0" style={{ backgroundImage: MOTIFS[theme.motif] }} />
+        <div className="relative z-10 px-6 py-10 md:px-12 md:py-14">
+          <p className="mb-3 inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-semibold uppercase tracking-wide backdrop-blur">
+            <Icon className="h-3.5 w-3.5" aria-hidden />
+            {theme.kicker}
           </p>
-          <h1 className="text-2xl font-extrabold leading-tight md:text-4xl">
-            Mọi thứ cho tổ ấm của bạn
-          </h1>
-          <p className="mt-2 text-sm text-emerald-50 md:text-base">
-            Đồ gia dụng, nhà bếp & nội thất chính hãng — giảm đến 50%, freeship đơn từ 500K.
-          </p>
-          <Link
-            href="/products?sort=best_selling"
-            className="mt-5 inline-flex h-11 items-center rounded-xl bg-accent-500 px-6 text-sm font-semibold shadow-sm transition-colors hover:bg-accent-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
-          >
-            Mua sắm ngay
-          </Link>
+          <h1 className="max-w-2xl text-2xl font-extrabold leading-tight md:text-4xl">{theme.title}</h1>
+          <p className="mt-3 max-w-xl text-sm leading-relaxed text-white/85 md:text-base">{theme.tagline}</p>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Link
+              href={`/danh-muc/${FEATURED_SLUG}`}
+              className="inline-flex h-11 items-center gap-2 rounded-xl bg-white px-6 text-sm font-semibold shadow-sm transition-transform hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+              style={{ color: theme.accentDeep }}
+            >
+              Khám phá {theme.name} <ArrowRight className="h-4 w-4" aria-hidden />
+            </Link>
+            <Link
+              href="/products"
+              className="inline-flex h-11 items-center rounded-xl border border-white/40 px-6 text-sm font-semibold text-white transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+            >
+              Tất cả sản phẩm
+            </Link>
+          </div>
+          <p className="mt-3 text-xs text-white/60">Gợi ý: đổi ngách qua env `NEXT_PUBLIC_FEATURED_CATEGORY` (hiện: {FEATURED_SLUG})</p>
         </div>
-        <div
-          aria-hidden
-          className="absolute -right-16 -top-16 h-64 w-64 rounded-full bg-white/10 blur-2xl"
-        />
-        <div
-          aria-hidden
-          className="absolute -bottom-24 right-32 h-72 w-72 rounded-full bg-accent-400/20 blur-3xl"
-        />
+        <div aria-hidden className="absolute -right-16 -top-16 h-64 w-64 rounded-full bg-white/10 blur-2xl" />
+        <div aria-hidden className="absolute -bottom-24 right-32 h-72 w-72 rounded-full bg-white/20 blur-3xl" />
       </section>
+
+      {/* Highlights của ngách */}
+      <section aria-label="Vì sao chọn ngách này" className="mt-4 grid gap-3 sm:grid-cols-3">
+        {theme.highlights.map((h) => {
+          const HIcon = h.icon;
+          return (
+            <div key={h.title} className="flex items-start gap-3 rounded-xl bg-white p-4 ring-1 ring-slate-100">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl" style={{ backgroundColor: theme.chipBg, color: theme.accentDeep }}>
+                <HIcon className="h-5 w-5" aria-hidden />
+              </span>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">{h.title}</h3>
+                <p className="mt-0.5 text-xs leading-relaxed text-slate-500">{h.text}</p>
+              </div>
+            </div>
+          );
+        })}
+      </section>
+
+      {/* Sản phẩm ngách chính — lọc theo categoryId */}
+      <ProductSection
+        title={`${theme.name} — bán chạy`}
+        sort="best_selling"
+        limit={8}
+        icon={<Sparkles className="h-5 w-5" />}
+        href={`/danh-muc/${FEATURED_SLUG}`}
+        categoryId={featuredCategory?.id}
+      />
 
       <CategoryGrid />
 
@@ -174,13 +219,6 @@ export default function HomePage() {
           </div>
         </div>
       </section>
-
-      <ProductSection
-        title="Bán chạy nhất"
-        sort="best_selling"
-        icon={<Sparkles className="h-5 w-5" />}
-        href="/products?sort=best_selling"
-      />
 
       <ProductSection title="Hàng mới về" sort="newest" href="/products?sort=newest" />
 
