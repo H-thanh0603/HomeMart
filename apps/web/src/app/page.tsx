@@ -1,11 +1,13 @@
 'use client';
 
+import { useRef, useState } from 'react';
 import Link from 'next/link';
 import { Flame, Sparkles } from 'lucide-react';
 import { useCategories, useProducts } from '@/hooks/use-catalog';
 import { ProductGrid } from '@/components/product/product-card';
 import { ProductGridSkeleton } from '@/components/ui/skeleton';
 import { ErrorState, EmptyState } from '@/components/ui/empty-state';
+import { Pagination } from '@/components/ui/pagination';
 
 function SectionHeader({
   icon,
@@ -47,11 +49,19 @@ function ProductSection({
   icon?: React.ReactNode;
   href?: string;
 }) {
-  const { data, isLoading, isError, refetch } = useProducts({ sort, limit });
+  const sectionRef = useRef<HTMLElement>(null);
+  const [page, setPage] = useState(1);
+  const { data, isLoading, isError, refetch } = useProducts({ sort, limit, page });
   const products = data?.data ?? [];
+  const totalPages = data?.meta?.totalPages ?? 1;
+
+  const changePage = (p: number) => {
+    setPage(p);
+    sectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   return (
-    <section aria-label={title} className="mt-8">
+    <section ref={sectionRef} aria-label={title} className="mt-8 scroll-mt-20">
       <SectionHeader icon={icon} title={title} href={href ?? `/products?sort=${sort}`} />
       {isLoading ? (
         <ProductGridSkeleton count={limit} />
@@ -60,7 +70,10 @@ function ProductSection({
       ) : products.length === 0 ? (
         <EmptyState title="Chưa có sản phẩm" description="Sản phẩm sẽ sớm được cập nhật." />
       ) : (
-        <ProductGrid products={products} />
+        <>
+          <ProductGrid products={products} />
+          <Pagination page={page} totalPages={totalPages} onChange={changePage} />
+        </>
       )}
     </section>
   );
@@ -87,7 +100,7 @@ function CategoryGrid() {
           {(data ?? []).slice(0, 12).map((cat) => (
             <Link
               key={cat.id}
-              href={`/products?categoryId=${cat.id}`}
+              href={cat.parentId == null ? `/danh-muc/${cat.slug}` : `/products?categoryId=${cat.id}`}
               className="group flex flex-col items-center gap-2 rounded-xl bg-white p-4 shadow-card ring-1 ring-slate-100 transition-shadow hover:shadow-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
             >
               <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-full bg-primary-50 text-primary-700">

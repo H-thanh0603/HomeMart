@@ -10,3 +10,8 @@ dist/
 uploads/
 *.log
 .DS_Store
+
+# build artifacts
+*.tsbuildinfo
+loadtest-result.json
+.impeccable/

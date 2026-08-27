@@ -150,7 +150,7 @@ export class GhnProvider implements CarrierProvider {
     };
   }
 
-  verifyWebhook(headers: Record<string, string>, body: unknown): boolean {
+  verifyWebhook(headers: Record<string, string>, _body: unknown): boolean {
     const token = process.env.GHN_WEBHOOK_TOKEN;
     if (!token) return true; // skip verification in dev
     return headers['x-token'] === token || headers['x-giaohangnhanh-token'] === token;
@@ -229,7 +229,7 @@ export class GhnProvider implements CarrierProvider {
     };
   }
 
-  private mockCreateOrder(input: CreateShipmentInput): CreateShipmentResult {
+  private mockCreateOrder(_input: CreateShipmentInput): CreateShipmentResult {
     const trackingCode = `GHNM${Date.now().toString(36).toUpperCase()}`;
     return {
       trackingCode,

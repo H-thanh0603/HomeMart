@@ -177,7 +177,7 @@ function CategoryNav() {
         {roots.map((cat) => (
           <li key={cat.id}>
             <Link
-              href={`/products?categoryId=${cat.id}`}
+              href={`/danh-muc/${cat.slug}`}
               className="block px-3 py-2 text-sm text-white/80 transition-colors hover:text-white"
             >
               {cat.name}

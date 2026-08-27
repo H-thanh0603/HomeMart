@@ -46,5 +46,13 @@ npm run lint && npm run typecheck
 - [Kiến trúc](docs/architecture.md) · [Database/ERD](docs/database.md) · [API](docs/api.md) · [Business rules](docs/business-rules.md) · [Deployment](docs/deployment.md)
 - Swagger runtime: `http://localhost:4000/api/docs`
 
+## Production (Docker full stack)
+```bash
+cp .env.production.example .env.production   # điền secrets thật
+docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+# → http://localhost  (nginx → web + api), health: /api/v1/health
+```
+Chi tiết: [docs/deployment.md](docs/deployment.md)
+
 ## Luồng nghiệp vụ đã implement
 Auth (refresh rotation) → Catalog (category tree, variants) → Inventory (reserve/release chống overselling) → Cart (guest merge) → Checkout (backend re-price) → Order state machine → Payment abstraction (COD/VNPay/MoMo/Stripe, webhook idempotent) → Voucher (atomic concurrency) → Shipping fee engine → Review (verified purchase) → Notifications (event-driven) → Admin dashboard & audit logs.

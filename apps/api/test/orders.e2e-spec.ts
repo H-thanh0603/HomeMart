@@ -124,10 +124,33 @@ describe('Cart → Checkout → Order (e2e)', () => {
       .expect(400);
   });
 
-  it('guest không Bearer token → 401 (global JWT guard chặn cả giỏ guest)', async () => {
+  it('guest qua X-Guest-Token → tạo giỏ, thêm item, xem giỏ độc lập với user', async () => {
+    const guestToken = `guest-e2e-${Date.now()}`;
+    const product = await firstProduct(app);
+
     await request(app.getHttpServer())
+      .post(`${API_PREFIX}/cart/items`)
+      .set('X-Guest-Token', guestToken)
+      .send({ productId: product.id, quantity: 1 })
+      .expect(201);
+
+    const res = await request(app.getHttpServer())
       .get(`${API_PREFIX}/cart`)
-      .set('X-Guest-Token', `guest-e2e-${Date.now()}`)
-      .expect(401);
+      .set('X-Guest-Token', guestToken)
+      .expect(200);
+    expect(res.body.data.items.some((i: { productId: string }) => i.productId === product.id)).toBe(
+      true,
+    );
+
+    // Guest không danh tính nào (không token, không guest-token) → 403
+    const noIdentity = await request(app.getHttpServer()).get(`${API_PREFIX}/cart`);
+    expect([401, 403]).toContain(noIdentity.status);
+
+    // Giỏ user không bị ảnh hưởng bởi giỏ guest
+    const userCart = await request(app.getHttpServer())
+      .get(`${API_PREFIX}/cart`)
+      .set(auth(accessToken))
+      .expect(200);
+    expect(userCart.body.data.guestToken).toBeNull();
   });
 });

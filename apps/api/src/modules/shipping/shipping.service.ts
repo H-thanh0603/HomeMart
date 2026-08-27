@@ -1,8 +1,8 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { OrderStatus, Prisma, ShipmentStatus } from '@prisma/client';
+import { OrderStatus, ShipmentStatus } from '@prisma/client';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../infra/prisma.service';
-import { CarrierFeeInput, CarrierProvider, CreateShipmentInput } from './carrier-provider.interface';
+import { CarrierProvider } from './carrier-provider.interface';
 import { GhnProvider } from './providers/ghn.provider';
 
 export interface ShippingQuoteInput {

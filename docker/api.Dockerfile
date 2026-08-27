@@ -1,9 +1,10 @@
 # ─── deps: cài chỉ workspace API ──────────────────────────────────────────────
 FROM node:20-alpine AS deps
+RUN apk add --no-cache openssl
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/
-RUN npm ci --ignore-scripts -w @homemart/api && npm rebuild prisma @prisma/client @prisma/engines
+RUN npm ci -w @homemart/api
 
 # ─── build: generate prisma client + compile nest + compile seed ─────────────
 FROM deps AS build

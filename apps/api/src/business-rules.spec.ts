@@ -154,8 +154,12 @@ describe('PromotionsService — voucher concurrency (BR-3)', () => {
   });
 
   afterEach(async () => {
-    await prisma.voucherUsage.deleteMany({ where: { voucherId: (await prisma.voucher.findUniqueOrThrow({ where: { code: voucherCode } })).id } }).catch(() => undefined);
-    await prisma.voucher.deleteMany({ where: { code: voucherCode } });
+    for (const code of [voucherCode, `${voucherCode}PU`]) {
+      const v = await prisma.voucher.findUnique({ where: { code } }).catch(() => undefined);
+      if (!v) continue;
+      await prisma.voucherUsage.deleteMany({ where: { voucherId: v.id } });
+      await prisma.voucher.deleteMany({ where: { code } });
+    }
     for (const id of ['user-b', 'user-c']) {
       await prisma.user.deleteMany({ where: { id, email: { contains: '@test.local' } } }).catch(() => undefined);
     }
@@ -222,7 +226,7 @@ describe('PromotionsService — voucher concurrency (BR-3)', () => {
         const ok = await promotionsService.consumeAtomically(tx as never, voucher.id, 'user-b');
         if (!ok) return false;
         await tx.voucherUsage.create({
-          data: { voucherId: voucher.id, userId: 'user-b', orderId: `pending-${n}` },
+          data: { voucherId: voucher.id, userId: 'user-b', orderId: `${voucher.id}-pending-${n}` },
         });
         return true;
       });
