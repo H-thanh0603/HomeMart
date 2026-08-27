@@ -15,7 +15,7 @@ async function bootstrap() {
   // Sentry — optional, init before NestFactory so all errors are captured
   if (env.SENTRY_DSN) {
     try {
-      // @ts-ignore — optional dep, installed only when SENTRY_DSN is used
+      // @ts-expect-error — optional dep, installed only when SENTRY_DSN is used
       const Sentry = await import('@sentry/node');
       (Sentry as { init: (o: unknown) => void }).init({ dsn: env.SENTRY_DSN, tracesSampleRate: 0.1, environment: env.NODE_ENV });
       Logger.log('Sentry initialized', 'Bootstrap');

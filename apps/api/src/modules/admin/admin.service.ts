@@ -10,7 +10,7 @@ export class AdminService {
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    const [todayRevenue, monthRevenue, totalOrders, pendingOrders, totalCustomers, totalProducts] =
+    const [todayRevenue, monthRevenue, totalOrders, pendingOrders, totalCustomers, totalProducts, activeVouchers, statusBreakdown] =
       await this.prisma.$transaction([
         this.prisma.order.aggregate({
           where: { createdAt: { gte: startOfDay }, status: { notIn: ['CANCELLED'] }, deletedAt: null },
@@ -24,6 +24,13 @@ export class AdminService {
         this.prisma.order.count({ where: { deletedAt: null, status: 'PENDING' } }),
         this.prisma.user.count({ where: { role: 'CUSTOMER', deletedAt: null } }),
         this.prisma.product.count({ where: { deletedAt: null } }),
+        this.prisma.voucher.findMany({
+          where: { status: 'ACTIVE', endsAt: { gte: now } },
+          select: { code: true, usedCount: true, usageLimit: true, endsAt: true },
+          take: 10,
+          orderBy: { usedCount: 'desc' },
+        }),
+        this.prisma.order.groupBy({ by: ['status'], where: { deletedAt: null }, _count: true, orderBy: { _count: { status: 'desc' } } } as never),
       ]);
 
     const lowStock = await this.prisma.inventory.findMany({
@@ -63,6 +70,8 @@ export class AdminService {
       lowStock,
       topProducts,
       recentOrders,
+      activeVouchers,
+      statusBreakdown: statusBreakdown.map((s) => ({ status: s.status, count: s._count })),
     };
   }
 
