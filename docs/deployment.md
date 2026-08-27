@@ -59,9 +59,12 @@ Browser gọi API cùng origin qua `NEXT_PUBLIC_API_URL=/api/v1` (relative) → 
 ### TLS/HTTPS
 
 Nginx hiện terminate ở port 80. Để bật HTTPS:
-1. Mount certificate vào nginx (volume thêm `./certs:/etc/nginx/certs:ro`)
-2. Thêm server block `listen 443 ssl` + redirect 80 → 443 trong `docker/nginx.conf`
-3. Hoặc đặt Cloudflare/Traefik/Caddy trước stack
+1. Đặt certs vào `./certs/fullchain.pem` + `./certs/privkey.pem` (Let's Encrypt: `certbot certonly --standalone -d your-domain.com`)
+2. Trong `docker-compose.prod.yml` thêm cho service `nginx`: `volumes: - ./certs:/etc/nginx/certs:ro`
+3. Bỏ comment block `listen 443 ssl http2` trong `docker/nginx.conf` (đã có sẵn, kèm HSTS `max-age=31536000; includeSubDomains; preload`)
+4. Hoặc chạy helper: `./docker/enable-tls.sh your-domain.com`
+5. Verify: `curl -I https://your-domain.com/health | grep -i Strict-Transport-Security`
+6. Hoặc đặt Cloudflare/Traefik/Caddy trước stack (khi đó HSTS do edge terminator gửi)
 
 ### Backup & restore
 
