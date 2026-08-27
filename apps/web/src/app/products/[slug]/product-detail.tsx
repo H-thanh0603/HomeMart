@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
@@ -144,12 +145,14 @@ export function ProductDetail({ slug, initial }: { slug: string; initial: Produc
         {/* Gallery */}
         <section aria-label="Hình ảnh sản phẩm">
           <div className="relative aspect-square w-full overflow-hidden rounded-xl bg-slate-50 ring-1 ring-slate-100">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
             {images[mainImageIdx] || images[0] ? (
-              <img
+              <Image
                 src={(images[mainImageIdx] ?? images[0]).url}
                 alt={product.name}
-                className="h-full w-full object-cover"
+                fill
+                priority
+                sizes="(max-width: 1024px) 100vw, 50vw"
+                className="object-cover"
               />
             ) : (
               <div className="flex h-full items-center justify-center text-slate-300">HomeMart</div>
@@ -174,8 +177,9 @@ export function ProductDetail({ slug, initial }: { slug: string; initial: Produc
                     )}
                     aria-label={`Xem ảnh ${idx + 1}`}
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={img.url} alt="" className="h-full w-full object-cover" />
+                    <span className="relative block h-full w-full">
+                      <Image src={img.url} alt="" fill sizes="64px" className="object-cover" />
+                    </span>
                   </button>
                 </li>
               ))}

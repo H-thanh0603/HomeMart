@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ArrowRight, Flame, Sparkles } from 'lucide-react';
@@ -9,7 +10,6 @@ import { ProductGridSkeleton } from '@/components/ui/skeleton';
 import { ErrorState, EmptyState } from '@/components/ui/empty-state';
 import { Pagination } from '@/components/ui/pagination';
 import { getCategoryTheme, MOTIFS } from '@/lib/category-themes';
-import { cn } from '@/lib/utils';
 
 function SectionHeader({
   icon,
@@ -107,10 +107,9 @@ function CategoryGrid() {
               href={cat.parentId == null ? `/danh-muc/${cat.slug}` : `/products?categoryId=${cat.id}`}
               className="group flex flex-col items-center gap-2 rounded-xl bg-white p-4 shadow-card ring-1 ring-slate-100 transition-shadow hover:shadow-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
             >
-              <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-full bg-primary-50 text-primary-700">
+              <div className="relative flex h-14 w-14 items-center justify-center overflow-hidden rounded-full bg-primary-50 text-primary-700">
                 {cat.imageUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={cat.imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" />
+                  <Image src={cat.imageUrl} alt="" fill sizes="56px" className="object-cover" />
                 ) : (
                   <span className="text-xl font-bold">{cat.name.charAt(0)}</span>
                 )}
@@ -264,8 +263,7 @@ function FlashSaleProducts() {
               aria-label={`${p.name} — giảm ${percent}%`}
             >
               <div className="relative aspect-square w-24 overflow-hidden rounded-xl bg-slate-50">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                {image && <img src={image.url} alt={p.name} loading="lazy" className="h-full w-full object-cover" />}
+                {image && <Image src={image.url} alt={p.name} fill sizes="96px" className="object-cover" />}
                 <span className="absolute right-0 top-0 rounded-bl-lg bg-accent-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
                   -{percent}%
                 </span>

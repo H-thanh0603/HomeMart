@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { CheckCircle2, Circle, XCircle } from 'lucide-react';
 import { useState } from 'react';
@@ -150,10 +151,9 @@ export function OrderDetail({ orderId }: { orderId: string }) {
             <ul className="divide-y divide-slate-100">
               {order.items.map((item) => (
                 <li key={item.id} className="flex items-center gap-3 py-3">
-                  <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-slate-50">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-slate-50">
                     {item.productImage && (
-                      <img src={item.productImage} alt={item.productName} className="h-full w-full object-cover" loading="lazy" />
+                      <Image src={item.productImage} alt={item.productName} fill sizes="56px" className="object-cover" />
                     )}
                   </div>
                   <div className="min-w-0 flex-1">

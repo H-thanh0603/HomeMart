@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { BookmarkPlus, ShoppingBag, Trash2 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth-store';
@@ -39,9 +40,8 @@ function CartRow({
   return (
     <div className="flex gap-3 py-3">
       <Link href={`/products/${product.slug}`} className="shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 rounded-xl">
-        <div className="h-20 w-20 overflow-hidden rounded-xl bg-slate-50 md:h-24 md:w-24">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          {image && <img src={image.url} alt={product.name} className="h-full w-full object-cover" loading="lazy" />}
+        <div className="relative h-20 w-20 overflow-hidden rounded-xl bg-slate-50 md:h-24 md:w-24">
+          {image && <Image src={image.url} alt={product.name} fill sizes="96px" className="object-cover" />}
         </div>
       </Link>
       <div className="min-w-0 flex-1">
@@ -240,9 +240,8 @@ function SavedRow({ item }: { item: CartItem }) {
   return (
     <div className="flex items-center gap-3 py-3">
       <Link href={`/products/${product.slug}`} className="shrink-0 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600">
-        <div className="h-14 w-14 overflow-hidden rounded-xl bg-slate-50">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          {image && <img src={image.url} alt={product.name} className="h-full w-full object-cover" loading="lazy" />}
+        <div className="relative h-14 w-14 overflow-hidden rounded-xl bg-slate-50">
+          {image && <Image src={image.url} alt={product.name} fill sizes="56px" className="object-cover" />}
         </div>
       </Link>
       <div className="min-w-0 flex-1">
