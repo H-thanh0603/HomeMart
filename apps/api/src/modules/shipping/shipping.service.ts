@@ -89,6 +89,14 @@ export class ShippingService {
     });
     if (!order) throw new NotFoundException('Order not found');
 
+    // Lấy weight thật từ Product (fallback 500g nếu thiếu)
+    const productIds = order.items.map((i) => i.productId);
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: productIds } },
+      select: { id: true, weightGrams: true },
+    });
+    const weightMap = new Map(products.map((p) => [p.id, p.weightGrams ?? 500]));
+
     try {
       const result = await carrier.createOrder({
         orderId,
@@ -99,13 +107,13 @@ export class ShippingService {
         province: order.shippingProvince,
         district: order.shippingDistrict,
         ward: order.shippingWard,
-        weightGrams: order.items.reduce((sum, i) => sum + (i.quantity * 500), 0), // TODO: get real weight
+        weightGrams: order.items.reduce((sum, i) => sum + (weightMap.get(i.productId) ?? 500) * i.quantity, 0),
         codAmount: order.totalAmount,
         serviceType: (await this.prisma.shippingMethod.findUnique({ where: { id: methodId } }))?.code ?? 'STANDARD',
         items: order.items.map((i) => ({
           name: i.productName,
           quantity: i.quantity,
-          weight: 500,
+          weight: weightMap.get(i.productId) ?? 500,
         })),
       });
 
