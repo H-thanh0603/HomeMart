@@ -4,6 +4,7 @@
 > 3 trụ bắt buộc: **thu tiền được, giao được, đổi trả được.**
 
 Ngày bắt đầu: 2026-08-26 · Chủ trì: Tech Lead + Ops
+**Trạng thái code:** `v0.9.0-launch-ready` (2026-08-27) — toàn bộ mục code đã xong, lint/typecheck/build pass. Còn lại các gate cần merchant/TLS/restore drill trên prod (1.1, 1.4, 2.3, 3.3, 3.4).
 
 ---
 
