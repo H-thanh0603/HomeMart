@@ -12,6 +12,18 @@ import cookieParser from 'cookie-parser';
 async function bootstrap() {
   const env = getEnv();
 
+  // Sentry — optional, init before NestFactory so all errors are captured
+  if (env.SENTRY_DSN) {
+    try {
+      // @ts-ignore — optional dep, installed only when SENTRY_DSN is used
+      const Sentry = await import('@sentry/node');
+      (Sentry as { init: (o: unknown) => void }).init({ dsn: env.SENTRY_DSN, tracesSampleRate: 0.1, environment: env.NODE_ENV });
+      Logger.log('Sentry initialized', 'Bootstrap');
+    } catch {
+      Logger.warn('SENTRY_DSN set but @sentry/node not installed — skip', 'Bootstrap');
+    }
+  }
+
   const logLevels: LogLevel[] =
     env.NODE_ENV === 'production' ? ['log', 'warn', 'error'] : ['log', 'debug', 'verbose', 'warn', 'error'];
   // rawBody: required for Stripe webhook signature verification

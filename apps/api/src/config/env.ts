@@ -58,6 +58,14 @@ const envSchema = z.object({
   GHN_FROM_PROVINCE: z.string().optional().default('79'),
   GHN_FROM_DISTRICT: z.string().optional().default('1461'),
   GHN_FROM_WARD: z.string().optional().default(''),
+
+  // Search
+  MEILISEARCH_URL: z.string().optional(),
+  MEILISEARCH_KEY: z.string().optional(),
+
+  // Observability
+  SENTRY_DSN: z.string().optional(),
+  METRICS_ENABLED: z.coerce.boolean().default(false),
 });
 
 export type Env = z.infer<typeof envSchema>;
