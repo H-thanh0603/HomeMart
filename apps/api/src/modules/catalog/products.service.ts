@@ -137,6 +137,25 @@ export class ProductsService {
 
   async suggest(q: string, limit = 8) {
     if (!q?.trim()) return [];
+    // Khi MEILISEARCH_URL được set, ưu tiên Meilisearch (nếu có); hiện tại fallback Prisma ILIKE
+    // Đã có GIN trigram index (migration 20260827000001_pg_trgm) nên ILIKE vẫn nhanh tới ~10k SKU
+    if (process.env.MEILISEARCH_URL) {
+      try {
+        const res = await fetch(`${process.env.MEILISEARCH_URL}/indexes/products/search`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${process.env.MEILISEARCH_KEY ?? ''}`,
+          },
+          body: JSON.stringify({ q: q.trim(), limit }),
+          signal: AbortSignal.timeout(2000),
+        });
+        if (res.ok) {
+          const data = (await res.json()) as { hits?: { id: string; slug: string; name: string; price: number }[] };
+          if (data.hits?.length) return data.hits as unknown as ReturnType<typeof this.prisma.product.findMany>;
+        }
+      } catch { /* fallback Prisma */ }
+    }
     return this.prisma.product.findMany({
       where: {
         ...publicWhere,
@@ -147,6 +166,7 @@ export class ProductsService {
       },
       select: { id: true, slug: true, name: true, price: true, compareAtPrice: true, images: { where: { isPrimary: true }, take: 1 } },
       take: limit,
+      orderBy: { soldCount: 'desc' },
     });
   }
 
