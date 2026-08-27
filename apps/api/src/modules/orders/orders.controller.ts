@@ -33,6 +33,7 @@ export class PreviewDto {
 
 export class OrderActionDto {
   @IsOptional() @IsString() @MaxLength(500) reason?: string;
+  @IsOptional() @IsArray() @IsString({ each: true }) @MaxLength(500, { each: true }) images?: string[]; // URLs từ POST /uploads/image
 }
 
 export class ListOrdersQuery {
@@ -87,6 +88,9 @@ export class OrdersController {
     @Param('id') id: string,
     @Body() dto: OrderActionDto,
   ) {
-    return this.ordersService.requestReturn(userId, id, dto.reason);
+    const note = dto.images?.length
+      ? `${dto.reason ?? ''}\n[images] ${dto.images.join(', ')}`.trim()
+      : dto.reason;
+    return this.ordersService.requestReturn(userId, id, note);
   }
 }
