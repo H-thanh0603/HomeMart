@@ -297,6 +297,50 @@ export class ProductsService {
     return { message: `${action}: ${ids.length} products` };
   }
 
+  /** (1) Import CSV hàng loạt — header: sku,name,price,categorySlug,stock,weightGrams,description */
+  async importCsv(csv: string) {
+    const lines = csv.trim().split('\n');
+    if (lines.length < 2) throw new BadRequestException('CSV rỗng hoặc thiếu header');
+    const header = lines[0].split(',').map((h) => h.trim().toLowerCase());
+    const required = ['sku', 'name', 'price', 'categoryslug'];
+    for (const r of required) if (!header.includes(r)) throw new BadRequestException(`Thiếu cột ${r} trong header: ${lines[0]}`);
+    const idx = (col: string) => header.indexOf(col);
+    const results: { sku: string; ok: boolean; error?: string; id?: string }[] = [];
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      // Simple CSV split — không hỗ trợ dấu phẩy trong giá trị (dùng template đơn giản)
+      const cols = line.split(',').map((c) => c.trim().replace(/^"|"$/g, ''));
+      const sku = cols[idx('sku')] ?? '';
+      const name = cols[idx('name')] ?? '';
+      const price = Number(cols[idx('price')] ?? 0);
+      const categorySlug = cols[idx('categoryslug')] ?? '';
+      const stock = Number(cols[idx('stock')] ?? 0);
+      const weightGrams = cols[idx('weightgrams')] ? Number(cols[idx('weightgrams')]) : undefined;
+      const description = cols[idx('description')] ?? undefined;
+      if (!sku || !name || !price || !categorySlug) {
+        results.push({ sku: sku || `line${i + 1}`, ok: false, error: 'Thiếu sku/name/price/categorySlug' });
+        continue;
+      }
+      const category = await this.prisma.category.findUnique({ where: { slug: categorySlug } });
+      if (!category) {
+        results.push({ sku, ok: false, error: `categorySlug "${categorySlug}" không tồn tại` });
+        continue;
+      }
+      try {
+        const created = await this.create({
+          sku, name, price, categoryId: category.id, stock: stock || 0,
+          weightGrams, description, status: ProductStatus.PUBLISHED,
+        });
+        results.push({ sku, ok: true, id: created.id });
+      } catch (e) {
+        results.push({ sku, ok: false, error: (e as Error).message.slice(0, 200) });
+      }
+    }
+    const success = results.filter((r) => r.ok).length;
+    return { total: results.length, success, failed: results.length - success, results };
+  }
+
   private emptyPage(query: ProductQuery) {
     return { items: [], total: 0, page: query.page, limit: query.limit };
   }

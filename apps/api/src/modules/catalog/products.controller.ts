@@ -1,4 +1,5 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
@@ -92,5 +93,23 @@ export class AdminProductsController {
   @Post('bulk') @Audit('product.bulk', 'Product')
   bulk(@Body() dto: BulkProductActionDto) {
     return this.productsService.bulkAction(dto.action, dto.ids);
+  }
+
+  @Post('import') @Roles(Role.MANAGER) @Audit('product.import', 'Product') @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({ summary: '[Admin] Import CSV 100 SP — header: sku,name,price,categorySlug,stock,weightGrams,description' })
+  async importCsv(@UploadedFile() file: Express.Multer.File) {
+    if (!file?.buffer) throw new Error('Thiếu file CSV (field name=file)');
+    const csv = file.buffer.toString('utf-8');
+    return this.productsService.importCsv(csv);
+  }
+
+  @Get('import/template') @Roles(Role.MANAGER)
+  @ApiOperation({ summary: '[Admin] Tải template CSV mẫu' })
+  template() {
+    return {
+      header: 'sku,name,price,categorySlug,stock,weightGrams,description',
+      example: 'HM-BEP-001,Nồi inox 304 5L,299000,nha-bep,20,1200,Nồi inox 304 an toàn',
+      categorySlugs: ['nha-bep', 'dien-gia-dung', 'dung-cu-sua-chua', 've-sinh-nha-cua', 'noi-that-nho', 'nha-thong-minh'],
+    };
   }
 }
