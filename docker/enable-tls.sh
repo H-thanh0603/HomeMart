@@ -1,22 +1,45 @@
 #!/bin/sh
-# HomeMart — bật TLS cho nginx (Let's Encrypt / manual certs)
-# Usage:
-#   ./docker/enable-tls.sh your-domain.com
-#   # yêu cầu: ./certs/fullchain.pem và ./certs/privkey.pem đã tồn tại
+# HomeMart — bật TLS thật sự:
+#   1. Sinh self-signed cert vào docker/certs/ (nếu chưa có)
+#   2. Đổi NGINX_CONF trong .env.production sang docker/nginx-tls.conf
+#   3. docker compose -f docker-compose.prod.yml up -d nginx
+#
+# Khi có domain thật: thay self-signed cert bằng Let's Encrypt (xem nginx-tls.conf).
 set -eu
-DOMAIN="${1:-}"
-if [ -z "$DOMAIN" ]; then
-  echo "Usage: $0 <domain>  (certs must be at ./certs/fullchain.pem + ./certs/privkey.pem)"
-  exit 1
+cd "$(dirname "$0")/.."
+
+CERT_DIR="docker/certs"
+FULLCHAIN="$CERT_DIR/fullchain.pem"
+PRIVKEY="$CERT_DIR/privkey.pem"
+ENV_FILE=".env.production"
+
+mkdir -p "$CERT_DIR"
+
+if [ ! -f "$FULLCHAIN" ] || [ ! -f "$PRIVKEY" ]; then
+  echo "→ Không thấy cert — sinh self-signed certificate (3650 ngày)..."
+  DOMAIN="${1:-localhost}"
+  openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes \
+    -keyout "$PRIVKEY" -out "$FULLCHAIN" \
+    -subj "/CN=$DOMAIN" \
+    -addext "subjectAltName=DNS:$DOMAIN,DNS:localhost,IP:127.0.0.1" 2>/dev/null
+  chmod 600 "$PRIVKEY"
+  echo "✓ Đã sinh $FULLCHAIN + $PRIVKEY"
+else
+  echo "✓ Cert đã tồn tại trong $CERT_DIR — dùng lại"
 fi
-if [ ! -f ./certs/fullchain.pem ] || [ ! -f ./certs/privkey.pem ]; then
-  echo "Missing ./certs/fullchain.pem or ./certs/privkey.pem — obtain via certbot:"
-  echo "  certbot certonly --standalone -d $DOMAIN --email admin@$DOMAIN --agree-tos"
-  echo "  cp /etc/letsencrypt/live/$DOMAIN/fullchain.pem ./certs/"
-  echo "  cp /etc/letsencrypt/live/$DOMAIN/privkey.pem ./certs/"
-  exit 1
+
+# Chuyển nginx sang conf TLS
+if [ -f "$ENV_FILE" ] && grep -q "^NGINX_CONF=" "$ENV_FILE"; then
+  sed -i 's|^NGINX_CONF=.*|NGINX_CONF=./docker/nginx-tls.conf|' "$ENV_FILE"
+else
+  echo "NGINX_CONF=./docker/nginx-tls.conf" >> "$ENV_FILE"
 fi
-echo "→ Certs found, uncommenting 443 block in docker/nginx.conf"
-# Hướng dẫn thủ công: bỏ comment block 443 trong docker/nginx.conf và thêm volumes certs cho nginx
-echo "✓ Verify: curl -I https://$DOMAIN/health | grep -i Strict-Transport-Security"
-echo "  HSTS expected: Strict-Transport-Security: max-age=31536000; includeSubDomains; preload"
+echo "✓ $ENV_FILE: NGINX_CONF=./docker/nginx-tls.conf"
+
+echo
+echo "→ Restart nginx:  docker compose -f docker-compose.prod.yml --env-file .env.production up -d --force-recreate nginx"
+echo "→ Kiểm tra:       curl -kI https://localhost/health"
+echo "  HSTS expected:  Strict-Transport-Security: max-age=31536000; includeSubDomains"
+echo
+echo "LƯU Ý: self-signed cert sẽ bị trình duyệt cảnh báo — chỉ dùng cho staging."
+echo "Khi đi live với domain: dùng certbot (hướng dẫn trong docker/nginx-tls.conf)."

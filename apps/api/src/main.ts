@@ -1,8 +1,10 @@
 import './config/env-loader';
 import 'reflect-metadata';
-import { LogLevel, Logger, ValidationPipe } from '@nestjs/common';
+import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { Logger } from 'nestjs-pino';
+import { SentryInit } from './common/observability/sentry.init';
 import helmet from 'helmet';
 import { getEnv } from './config/env';
 import { AppModule } from './app.module';
@@ -12,22 +14,13 @@ import cookieParser from 'cookie-parser';
 async function bootstrap() {
   const env = getEnv();
 
-  // Sentry — optional, init before NestFactory so all errors are captured
-  if (env.SENTRY_DSN) {
-    try {
-      // @ts-expect-error — optional dep, installed only when SENTRY_DSN is used
-      const Sentry = await import('@sentry/node');
-      (Sentry as { init: (o: unknown) => void }).init({ dsn: env.SENTRY_DSN, tracesSampleRate: 0.1, environment: env.NODE_ENV });
-      Logger.log('Sentry initialized', 'Bootstrap');
-    } catch {
-      Logger.warn('SENTRY_DSN set but @sentry/node not installed — skip', 'Bootstrap');
-    }
-  }
+  // Sentry — init before NestFactory so all errors are captured.
+  // 4xx client errors are noise, only 5xx/unhandled are reported.
+  SentryInit(env);
 
-  const logLevels: LogLevel[] =
-    env.NODE_ENV === 'production' ? ['log', 'warn', 'error'] : ['log', 'debug', 'verbose', 'warn', 'error'];
-  // rawBody: required for Stripe webhook signature verification
-  const app = await NestFactory.create(AppModule, { logger: logLevels, rawBody: true });
+  // Raw JSON logs (pino). Buffer until logger module is ready.
+  const app = await NestFactory.create(AppModule, { bufferLogs: true, rawBody: true });
+  app.useLogger(app.get(Logger));
 
   // Refresh token travels in an httpOnly cookie (see auth.controller.ts)
   app.use(cookieParser());
@@ -76,11 +69,11 @@ async function bootstrap() {
       .addBearerAuth()
       .build();
     SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, config));
-    Logger.log(`📚 Swagger at http://localhost:${env.API_PORT}/api/docs`, 'Bootstrap');
+    app.get(Logger).log(`📚 Swagger at http://localhost:${env.API_PORT}/api/docs`);
   }
 
   await app.listen(env.API_PORT);
-  Logger.log(`🚀 HomeMart API ready at http://localhost:${env.API_PORT}/api/v1`, 'Bootstrap');
+  app.get(Logger).log(`🚀 HomeMart API ready at http://localhost:${env.API_PORT}/api/v1`);
 }
 
 bootstrap().catch((e) => {

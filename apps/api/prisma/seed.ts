@@ -125,9 +125,21 @@ const PRODUCTS: P[] = [
 ];
 
 async function main() {
+  // Seed ships well-known demo credentials. In production they are a
+  // free admin account — refuse unless SEED_PASSWORD/SEED_ADMIN_PASSWORD
+  // provide real ones.
+  if (process.env.NODE_ENV === 'production') {
+    const pw = process.env.SEED_PASSWORD ?? '';
+    const adminPw = process.env.SEED_ADMIN_PASSWORD ?? '';
+    if (!pw || !adminPw) {
+      throw new Error(
+        'Refusing to seed in production without SEED_PASSWORD and SEED_ADMIN_PASSWORD (default credentials are public)',
+      );
+    }
+  }
   console.log('🌱 Seeding HomeMart...');
   const passwordHash = await bcrypt.hash(process.env.SEED_PASSWORD ?? 'Customer@123', 12);
-  const adminHash = await bcrypt.hash('Admin@123', 12);
+  const adminHash = await bcrypt.hash(process.env.SEED_ADMIN_PASSWORD ?? 'Admin@123', 12);
 
   // ── Users ──
   const admin = await prisma.user.upsert({

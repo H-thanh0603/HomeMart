@@ -22,7 +22,9 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    # volatile-lru: chỉ đuổi key có TTL. catalog:version không có TTL nên
+    # không bao giờ bị LRU đuổi ra (tránh phục vụ cache stale sau eviction).
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy volatile-lru
     volumes:
       - redisdata:/data
     healthcheck:
@@ -39,7 +41,9 @@ services:
     stop_grace_period: 30s # đủ thời gian cho in-flight requests + prisma.$disconnect
     env_file: .env.production
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      # connection_limit/pool_timeout: chống cạn pool khi checkout đồng thời
+      # (transaction checkout giữ lock tới 15s). Tăng theo số replica API.
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public&connection_limit=20&pool_timeout=10
       REDIS_URL: redis://redis:6379
     volumes:
       - uploads:/app/uploads
@@ -59,13 +63,37 @@ services:
     depends_on:
       - api
 
+  # Backup tự động hằng ngày 02:00 vào ./backups (giữ 14 ngày).
+  # LƯU Ý: copy ./backups ra ngoài máy chủ (S3/R2/ máy khác) — cùng ổ đĩa
+  # với DB thì không đếm là backup.
+  backup:
+    image: alpine:3.20
+    restart: unless-stopped
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+      KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+    volumes:
+      - ./docker/backup-job.sh:/etc/periodic/daily/backup:ro
+      - ./backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: sh -c "apk add --no-cache postgresql16-client >/dev/null && crond -f -d 8"
+
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped
     ports:
       - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
     volumes:
-      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # Mặc định: HTTP. Khi bật TLS (./docker/enable-tls.sh), .env.production
+      # đặt NGINX_CONF=./docker/nginx-tls.conf và nginx nhận cert từ docker/certs/
+      - ${NGINX_CONF:-./docker/nginx.conf}:/etc/nginx/conf.d/default.conf:ro
+      - ./docker/certs:/etc/nginx/certs:ro
     depends_on:
       - api
       - web
