@@ -92,7 +92,9 @@ function safeJson(res) {
 }
 
 function getDefaultAddress(token) {
-  const res = http.get(`${API_URL}/addresses`, {
+  // Đúng endpoint: /users/me/addresses (GET /addresses không tồn tại →
+  // đây là lý do các lần chạy load test trước đây luôn báo 0%).
+  const res = http.get(`${API_URL}/users/me/addresses`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (res.status !== 200) return null;
@@ -102,7 +104,7 @@ function getDefaultAddress(token) {
 }
 
 function createAddress(token) {
-  const res = http.post(`${API_URL}/addresses`, JSON.stringify({
+  const res = http.post(`${API_URL}/users/me/addresses`, JSON.stringify({
     fullName: `Load Test ${__VU}`,
     phone: `0900${String(__VU).padStart(6, '0')}`,
     province: 'Hà Nội',
@@ -190,7 +192,8 @@ export default function () {
 
   sleep(0.1);
 
-  // 5. Checkout (COD)
+  // 5. Checkout (COD) — Idempotency-Key per attempt: retries of the same
+  //    attempt must never create duplicate orders.
   const checkoutRes = http.post(`${API_URL}/orders/checkout`, JSON.stringify({
     addressId,
     shippingMethodId: methodId,
@@ -200,6 +203,7 @@ export default function () {
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
+      'Idempotency-Key': `loadtest-${__VU}-${__ITER}-${start}`,
     },
     timeout: '10s',
   });
@@ -207,7 +211,8 @@ export default function () {
   const duration = Date.now() - start;
   checkoutDuration.add(duration);
 
-  const ok = checkoutRes.status === 200;
+  // NestJS trả 201 Created cho POST checkout (200 chỉ với GET)
+  const ok = checkoutRes.status === 200 || checkoutRes.status === 201;
   checkoutSuccess.add(ok);
   if (!ok) {
     checkoutErrors.add(1);

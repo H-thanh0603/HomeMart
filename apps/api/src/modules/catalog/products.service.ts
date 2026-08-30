@@ -1,6 +1,8 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { createHash } from 'crypto';
 import { Prisma, ProductStatus } from '@prisma/client';
 import { PrismaService } from '../../infra/prisma.service';
+import { RedisService } from '../../infra/redis.service';
 import { slugify } from '../../common/utils/helpers';
 
 export interface ProductQuery {
@@ -17,6 +19,11 @@ export interface ProductQuery {
   inStock?: boolean;
   onSale?: boolean;
   status?: ProductStatus;
+  /**
+   * Keyset pagination cursor (base64 "createdAtISO|id") — only used with the
+   * default `newest` sort. Deep pages skip the OFFSET scan entirely.
+   */
+  cursor?: string;
 }
 
 const productInclude = {
@@ -38,9 +45,86 @@ function withPrimaryInventory(product: any): any {
 
 const publicWhere = { deletedAt: null, status: ProductStatus.PUBLISHED };
 
+/**
+ * Slim include for list/card responses — the full include (variants +
+ * per-variant inventory + attributes) multiplies row fan-out ~5x per list
+ * query and nothing in the product card needs it.
+ */
+const listInclude = {
+  images: { orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }] },
+  inventories: { where: { variantId: null } },
+  category: { select: { id: true, name: true, slug: true } },
+  brand: { select: { id: true, name: true, slug: true, logoUrl: true } },
+} satisfies Prisma.ProductInclude;
+
+/** Cache version namespace — bumped on any product write, so stale keys are never read. */
+const CATALOG_VERSION_KEY = 'catalog:version';
+const LIST_CACHE_TTL = 30; // seconds
+const DETAIL_CACHE_TTL = 60; // seconds
+const NEGATIVE_CACHE_TTL = 10; // seconds — misses for nonexistent slugs
+const STAMPEDE_LOCK_TTL_MS = 5000;
+const STAMPEDE_WAIT_MS = 1500;
+const NULL_MARKER = '__NULL__';
+
 @Injectable()
 export class ProductsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly redis: RedisService,
+  ) {}
+
+  /**
+   * Cache-aside read with stampede protection: on a miss only one caller
+   * reloads from the DB while the rest briefly re-poll the cache.
+   * Redis down = pass-through (degraded, same as before).
+   */
+  private async cached<T>(scope: 'list' | 'detail' | 'count', key: string, ttl: number, load: () => Promise<T>): Promise<T> {
+    const version = (await this.redis.get(CATALOG_VERSION_KEY)) ?? '0';
+    const fullKey = `${scope}:${version}:${key}`;
+    const hit = await this.redis.get(fullKey);
+    if (hit) {
+      if (hit === NULL_MARKER) throw new NotFoundException('Product not found');
+      try {
+        return JSON.parse(hit) as T;
+      } catch {
+        /* corrupt entry — fall through to load */
+      }
+    }
+
+    const lockKey = `lock:${fullKey}`;
+    const winner = await this.redis.tryLock(lockKey, STAMPEDE_LOCK_TTL_MS);
+    if (!winner) {
+      // Someone else is loading — wait for them to populate the cache
+      const deadline = Date.now() + STAMPEDE_WAIT_MS;
+      while (Date.now() < deadline) {
+        await this.redis.sleep(100);
+        const repopulated = await this.redis.get(fullKey);
+        if (repopulated) {
+          if (repopulated === NULL_MARKER) throw new NotFoundException('Product not found');
+          try {
+            return JSON.parse(repopulated) as T;
+          } catch {
+            break;
+          }
+        }
+      }
+      // Lock holder died or took too long — load ourselves rather than fail
+    }
+
+    try {
+      const value = await load();
+      await this.redis.set(fullKey, JSON.stringify(value), ttl);
+      return value;
+    } catch (e) {
+      // Negative cache: repeated requests for a missing slug hit the DB once
+      if (e instanceof NotFoundException) {
+        await this.redis.set(fullKey, NULL_MARKER, NEGATIVE_CACHE_TTL);
+      }
+      throw e;
+    } finally {
+      if (winner) await this.redis.unlock(lockKey);
+    }
+  }
 
   async list(query: ProductQuery) {
     const where: Prisma.ProductWhereInput = {
@@ -90,26 +174,65 @@ export class ProductsService {
 
     if (and.length === 0) delete where.AND;
 
-    const [items, total] = await this.prisma.$transaction([
-      this.prisma.product.findMany({
-        where,
-        orderBy,
-        skip: (query.page - 1) * query.limit,
-        take: query.limit,
-        include: { ...productInclude, attributes: false },
-      }),
-      this.prisma.product.count({ where }),
-    ]);
+    // Keyset pagination (newest sort): cursor = base64("createdAtISO|id").
+    // Deep pages avoid the OFFSET scan; other sorts keep offset pagination.
+    let skip = (query.page - 1) * query.limit;
+    let effectiveWhere: Prisma.ProductWhereInput = where;
+    if (query.cursor && (query.sort ?? 'newest') === 'newest') {
+      try {
+        const [createdAtIso, cursorId] = Buffer.from(query.cursor, 'base64').toString('utf8').split('|');
+        const cursorDate = new Date(createdAtIso);
+        if (!Number.isNaN(cursorDate.getTime()) && cursorId) {
+          effectiveWhere = {
+            AND: [
+              where,
+              {
+                OR: [
+                  { createdAt: { lt: cursorDate } },
+                  { createdAt: cursorDate, id: { lt: cursorId } },
+                ],
+              },
+            ],
+          };
+          skip = 0;
+        }
+      } catch {
+        /* malformed cursor — fall back to offset */
+      }
+    }
+
+    const items = await this.prisma.product.findMany({
+      where: effectiveWhere,
+      orderBy,
+      skip,
+      take: query.limit,
+      include: listInclude,
+    });
+
+    // count() doubles every request's DB cost — cache it per filter set
+    const countKey = `h:${createHash('sha1').update(JSON.stringify(effectiveWhere)).digest('hex')}`;
+    const total = await this.cached('count', countKey, LIST_CACHE_TTL, () =>
+      this.prisma.product.count({ where: effectiveWhere }),
+    );
     return { items: items.map(withPrimaryInventory), total, page: query.page, limit: query.limit };
   }
 
+  async listCached(query: ProductQuery) {
+    // Public list only — admin list (status filter) skips cache.
+    if (query.status) return this.list(query);
+    const key = JSON.stringify(query);
+    return this.cached('list', key, LIST_CACHE_TTL, () => this.list(query));
+  }
+
   async findBySlug(slug: string) {
-    const product = await this.prisma.product.findFirst({
-      where: { slug, ...publicWhere },
-      include: { ...productInclude, reviews: false },
+    return this.cached('detail', `slug:${slug}`, DETAIL_CACHE_TTL, async () => {
+      const product = await this.prisma.product.findFirst({
+        where: { slug, ...publicWhere },
+        include: { ...productInclude, reviews: false },
+      });
+      if (!product) throw new NotFoundException('Product not found');
+      return withPrimaryInventory(product);
     });
-    if (!product) throw new NotFoundException('Product not found');
-    return withPrimaryInventory(product);
   }
 
   async findRelated(productId: string, limit = 8) {
@@ -120,7 +243,7 @@ export class ProductsService {
     let items = product.relatedProductIds.length
       ? await this.prisma.product.findMany({
           where: { id: { in: product.relatedProductIds }, ...publicWhere },
-          include: { ...productInclude, attributes: false },
+          include: listInclude,
         })
       : [];
     if (items.length < limit) {
@@ -128,7 +251,7 @@ export class ProductsService {
         where: { categoryId: product.categoryId, id: { notIn: [productId, ...items.map((i) => i.id)] }, ...publicWhere },
         orderBy: { soldCount: 'desc' },
         take: limit - items.length,
-        include: { ...productInclude, attributes: false },
+        include: listInclude,
       });
       items = [...items, ...fill];
     }
@@ -175,7 +298,7 @@ export class ProductsService {
   async create(dto: CreateProductDto) {
     const slug = dto.slug || slugify(dto.name);
     await this.assertUnique(slug, dto.sku);
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const product = await tx.product.create({
         data: {
           sku: dto.sku,
@@ -229,12 +352,14 @@ export class ProductsService {
       }
       return withPrimaryInventory(await this.getForAdmin(product.id));
     });
+    await this.bumpCatalogVersion();
+    return result;
   }
 
   async update(id: string, dto: UpdateProductDto) {
     await this.getForAdmin(id);
     const { images, attributes, variants, stock, ...rest } = dto;
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       if (images) {
         await tx.productImage.deleteMany({ where: { productId: id } });
         await tx.productImage.createMany({
@@ -258,6 +383,8 @@ export class ProductsService {
       });
       return withPrimaryInventory(updated);
     });
+    await this.bumpCatalogVersion();
+    return updated;
   }
 
   async getForAdmin(id: string) {
@@ -273,11 +400,13 @@ export class ProductsService {
   async remove(id: string) {
     await this.getForAdmin(id);
     await this.prisma.product.update({ where: { id }, data: { deletedAt: new Date(), status: ProductStatus.ARCHIVED } });
+    await this.bumpCatalogVersion();
     return { message: 'Archived' };
   }
 
   async restore(id: string) {
     await this.prisma.product.update({ where: { id }, data: { deletedAt: null, status: ProductStatus.PUBLISHED } });
+    await this.bumpCatalogVersion();
     return { message: 'Restored' };
   }
 
@@ -294,6 +423,7 @@ export class ProductsService {
         await this.prisma.product.updateMany({ where: { id: { in: ids } }, data: { deletedAt: new Date() } });
         break;
     }
+    await this.bumpCatalogVersion();
     return { message: `${action}: ${ids.length} products` };
   }
 
@@ -305,6 +435,10 @@ export class ProductsService {
     const required = ['sku', 'name', 'price', 'categoryslug'];
     for (const r of required) if (!header.includes(r)) throw new BadRequestException(`Thiếu cột ${r} trong header: ${lines[0]}`);
     const idx = (col: string) => header.indexOf(col);
+    // Batch: preload all categories once (1 query instead of 1 per row)
+    const categoryBySlug = new Map(
+      (await this.prisma.category.findMany({ where: { deletedAt: null }, select: { id: true, slug: true } })).map((c) => [c.slug, c.id]),
+    );
     const results: { sku: string; ok: boolean; error?: string; id?: string }[] = [];
     for (let i = 1; i < lines.length; i++) {
       const line = lines[i].trim();
@@ -322,14 +456,14 @@ export class ProductsService {
         results.push({ sku: sku || `line${i + 1}`, ok: false, error: 'Thiếu sku/name/price/categorySlug' });
         continue;
       }
-      const category = await this.prisma.category.findUnique({ where: { slug: categorySlug } });
-      if (!category) {
+      const categoryId = categoryBySlug.get(categorySlug);
+      if (!categoryId) {
         results.push({ sku, ok: false, error: `categorySlug "${categorySlug}" không tồn tại` });
         continue;
       }
       try {
         const created = await this.create({
-          sku, name, price, categoryId: category.id, stock: stock || 0,
+          sku, name, price, categoryId, stock: stock || 0,
           weightGrams, description, status: ProductStatus.PUBLISHED,
         });
         results.push({ sku, ok: true, id: created.id });
@@ -338,11 +472,17 @@ export class ProductsService {
       }
     }
     const success = results.filter((r) => r.ok).length;
+    if (success > 0) await this.bumpCatalogVersion();
     return { total: results.length, success, failed: results.length - success, results };
   }
 
   private emptyPage(query: ProductQuery) {
     return { items: [], total: 0, page: query.page, limit: query.limit };
+  }
+
+  /** Invalidate all catalog caches. Cheap: readers fetch version first, old keys orphan and expire by TTL. */
+  private async bumpCatalogVersion() {
+    await this.redis.bump(CATALOG_VERSION_KEY);
   }
 
   /** Category itself + all descendants (tree-aware filter). */

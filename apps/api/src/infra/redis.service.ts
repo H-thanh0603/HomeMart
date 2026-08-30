@@ -35,6 +35,35 @@ export class RedisService implements OnModuleDestroy {
     await this.client.del(key).catch(() => undefined);
   }
 
+  /** Bump a version key; returns the new value. Used to namespace caches. */
+  async bump(key: string): Promise<number> {
+    if (this.client.status !== 'ready') return 0;
+    const v = await this.client.incr(key).catch(() => null);
+    return v ?? 0;
+  }
+
+  /**
+   * Singleflight lock for cache stampede protection. Returns true when THIS
+   * caller won the right to reload the value; losers should wait and re-read.
+   * Redis down → true (degraded pass-through, no locking).
+   */
+  async tryLock(key: string, ttlMs: number): Promise<boolean> {
+    if (this.client.status !== 'ready') return true;
+    const ok = await this.client.set(key, '1', 'PX', ttlMs, 'NX').catch(() => null);
+    if (ok === null) return true;
+    return ok === 'OK';
+  }
+
+  async unlock(key: string): Promise<void> {
+    if (this.client.status !== 'ready') return;
+    await this.client.del(key).catch(() => undefined);
+  }
+
+  /** Sleep helper for lock waiters. */
+  sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
   async onModuleDestroy() {
     await this.client.quit().catch(() => undefined);
   }

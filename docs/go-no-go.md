@@ -45,3 +45,22 @@ Quyết định: Go / No-Go (quay lại __)
 
 - ADR kho đơn: `docs/adr/0001-single-warehouse.md`
 - Runbook vận hành: `docs/runbook.md`
+
+## Kết quả load test đã ghi nhận
+
+**Ngày 2026-08-30 — k6 200 VU / 200 checkout song song (dev machine, ts-node, không Redis):**
+
+| Chỉ số | Kết quả | Ngưỡng |
+|---|---|---|
+| Success rate (checkout) | **97.4%** | >95% ✅ |
+| Oversell (availableStock < 0) | **0** | 0 ✅ |
+| reservedStock âm | **0** | 0 ✅ |
+| Trùng Idempotency-Key | **0** | 0 ✅ |
+| Checkout fail vì OUT_OF_STOCK | 5/200 | đúng BR (tồn kho hết hợp lệ) ✅ |
+| Avg duration / iteration (register→checkout) | ~45s | tham khảo, dev box |
+
+Ghi chú:
+- Kết quả lưu tại `loadtest-result.json` (gitignored) — regen bằng `k6 run --vus 200 --iterations 200 apps/api/loadtest/loadtest-checkout.js`.
+- Chạy test cần nâng rate limit: `RATE_LIMIT_PER_MIN=5000 AUTH_THROTTLE_MULTIPLIER=500` (throttle auth mặc định 10 login/phút/IP sẽ chặn phần lớn iteration).
+- Lịch sử: các lần chạy trước đây báo 0% là do script sai endpoint (`/addresses` thay vì `/users/me/addresses`) — đã sửa.
+- Avg duration cao ở 200 VU trên máy dev là do per-line query tuần tự trong checkout transaction — cần Redis + pool tuning khi lên prod (xem docs/deployment.md).

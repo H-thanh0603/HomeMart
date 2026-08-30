@@ -22,11 +22,18 @@ export class InventoryService {
   /**
    * Atomically reserve stock for order checkout.
    * Uses SELECT ... FOR UPDATE row locking inside a transaction to prevent overselling.
+   * Rows are locked in a deterministic order (sorted by inventory id) — two
+   * concurrent orders with overlapping items can no longer deadlock.
    * Throws (rolling back the whole tx) when any item is insufficient.
    */
   async reserve(tx: Tx, items: ReserveItem[], orderId: string) {
+    const invIds = new Map<string, ReserveItem>();
     for (const item of items) {
       const invId = await this.findInventoryId(tx, item);
+      invIds.set(invId, item);
+    }
+    for (const invId of [...invIds.keys()].sort()) {
+      const item = invIds.get(invId)!;
       // Lock the row
       const rows: { id: string; availableStock: number }[] = await tx.$queryRaw`
         SELECT id, "availableStock" FROM inventories WHERE id = ${invId} FOR UPDATE`;
@@ -86,10 +93,17 @@ export class InventoryService {
   /** Cancel / payment failure / timeout → give stock back. */
   async release(tx: Tx, items: ReserveItem[], orderId: string) {
     for (const item of items) {
-      const inv = await this.getInventory(tx, item);
-      if (inv.reservedStock < item.quantity) continue; // already released — idempotent-safe
+      // Lock the row before the idempotency check: without it, a concurrent
+      // cancel + expire-cron double-release can drive reservedStock negative
+      // and mint free availableStock.
+      const invId = await this.findInventoryId(tx, item);
+      const rows: { id: string; reservedStock: number }[] = await tx.$queryRaw`
+        SELECT id, "reservedStock" FROM inventories WHERE id = ${invId} FOR UPDATE`;
+      const locked = rows[0];
+      if (!locked) throw new NotFoundException('Inventory not found');
+      if (locked.reservedStock < item.quantity) continue; // already released — idempotent-safe
       await tx.inventory.update({
-        where: { id: inv.id },
+        where: { id: invId },
         data: {
           reservedStock: { decrement: item.quantity },
           availableStock: { increment: item.quantity },
@@ -97,7 +111,7 @@ export class InventoryService {
       });
       await tx.inventoryTransaction.create({
         data: {
-          inventoryId: inv.id,
+          inventoryId: invId,
           type: InventoryTransactionType.RELEASE,
           quantity: item.quantity,
           reference: orderId,
