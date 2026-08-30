@@ -2,11 +2,20 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { CreditCard, MapPin, ShoppingBag, Wallet } from 'lucide-react';
+import {
+  CreditCard,
+  Lock,
+  MapPin,
+  QrCode,
+  ShieldCheck,
+  ShoppingBag,
+  Truck,
+  Wallet,
+} from 'lucide-react';
 import { useAuthStore } from '@/stores/auth-store';
 import { postData } from '@/lib/api';
 import {
@@ -45,10 +54,10 @@ type AddressForm = z.infer<typeof addressSchema>;
 
 const PAYMENT_METHODS: { value: PaymentMethodType; icon: React.ReactNode; hint?: string }[] = [
   { value: 'COD', icon: <Wallet className="h-4 w-4" />, hint: 'Thanh toán tiền mặt khi nhận hàng' },
-  { value: 'VNPAY', icon: <CreditCard className="h-4 w-4" />, hint: 'Cổng thanh toán VNPay' },
-  { value: 'MOMO', icon: <Wallet className="h-4 w-4" />, hint: 'Quét mã QR MoMo' },
-  { value: 'STRIPE', icon: <CreditCard className="h-4 w-4" />, hint: 'Thẻ Visa/Mastercard' },
-  { value: 'BANK_TRANSFER', icon: <CreditCard className="h-4 w-4" />, hint: 'Chuyển khoản ngân hàng' },
+  { value: 'VNPAY', icon: <QrCode className="h-4 w-4" />, hint: 'Cổng thanh toán & QR VNPay' },
+  { value: 'MOMO', icon: <Wallet className="h-4 w-4" />, hint: 'Ví điện tử MoMo' },
+  { value: 'STRIPE', icon: <CreditCard className="h-4 w-4" />, hint: 'Thẻ quốc tế Visa, Mastercard' },
+  { value: 'BANK_TRANSFER', icon: <CreditCard className="h-4 w-4" />, hint: 'Chuyển khoản trực tiếp ngân hàng' },
 ];
 
 export function CheckoutView() {
@@ -63,7 +72,6 @@ export function CheckoutView() {
   const checkout = useCheckout();
   const setCount = useCartStore((s) => s.setCount);
 
-  // Guard: yêu cầu đăng nhập
   useEffect(() => {
     if (hydrated && !accessToken) {
       toast.info('Vui lòng đăng nhập để thanh toán');
@@ -78,6 +86,7 @@ export function CheckoutView() {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethodType>('COD');
   const [note, setNote] = useState('');
   const [addressDialogOpen, setAddressDialogOpen] = useState(false);
+  const idempotencyRef = useRef<{ payload: string; key: string } | null>(null);
 
   const addresses = useMemo(() => addressesQuery.data ?? [], [addressesQuery.data]);
   const items = useMemo(
@@ -85,7 +94,6 @@ export function CheckoutView() {
     [cartQuery.data],
   );
 
-  // Chọn mặc định
   useEffect(() => {
     if (!addressId && addresses.length > 0) {
       setAddressId((addresses.find((a) => a.isDefault) ?? addresses[0]).id);
@@ -129,7 +137,7 @@ export function CheckoutView() {
   if (items.length === 0) {
     return (
       <EmptyState
-        icon={<ShoppingBag className="h-12 w-12" />}
+        icon={<ShoppingBag className="h-12 w-12 text-emerald-600" />}
         title="Giỏ hàng của bạn đang trống"
         description="Thêm sản phẩm để tiến hành thanh toán."
         actionLabel="Mua sắm ngay"
@@ -144,7 +152,6 @@ export function CheckoutView() {
     setVoucherCode(code.toUpperCase());
   };
 
-  // Hiện thông báo khi preview trả lỗi voucher
   const voucherError =
     voucherCode && preview.isError ? 'Mã giảm giá không hợp lệ hoặc không áp dụng được' : '';
 
@@ -157,6 +164,19 @@ export function CheckoutView() {
       toast.error('Vui lòng chọn phương thức vận chuyển');
       return;
     }
+    // One idempotency key per checkout intent: unchanged payload → same key,
+    // so double-clicks and retry-after-network-loss never create two orders.
+    const payloadKey = JSON.stringify({
+      addressId,
+      shippingMethodId,
+      voucherCode,
+      paymentMethod,
+      note: note.trim(),
+      items: items.map((i) => `${i.productId}:${i.variantId ?? ''}:${i.quantity}`),
+    });
+    if (idempotencyRef.current?.payload !== payloadKey) {
+      idempotencyRef.current = { payload: payloadKey, key: crypto.randomUUID() };
+    }
     checkout.mutate(
       {
         addressId,
@@ -164,6 +184,7 @@ export function CheckoutView() {
         voucherCode,
         paymentMethod,
         note: note.trim() || undefined,
+        idempotencyKey: idempotencyRef.current.key,
       },
       {
         onSuccess: async (order) => {
@@ -173,7 +194,6 @@ export function CheckoutView() {
             router.push(`/orders/${order.id}`);
             return;
           }
-          // Non-COD: open a payment session and follow the gateway redirect
           try {
             const { orderId, payment } = await postData<{
               orderId: string;
@@ -188,7 +208,6 @@ export function CheckoutView() {
             }
             router.push(`/orders/${orderId ?? order.id}`);
           } catch {
-            // Payment session failed — order stays PENDING, user can retry from the order page
             toast.error('Không tạo được phiên thanh toán, bạn có thể thử lại trong chi tiết đơn hàng');
             router.push(`/orders/${order.id}`);
           }
@@ -200,37 +219,61 @@ export function CheckoutView() {
 
   return (
     <div>
-      <h1 className="mb-4 text-xl font-bold text-slate-900">Thanh toán</h1>
+      {/* Checkout step progress */}
+      <div className="mb-6 flex items-center justify-center gap-3 text-xs font-bold text-slate-500">
+        <Link href="/cart" className="flex items-center gap-1.5 text-emerald-700 hover:underline">
+          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-100 text-xs text-emerald-800">
+            ✓
+          </span>
+          Giỏ hàng
+        </Link>
+        <span className="text-slate-300">———</span>
+        <span className="flex items-center gap-1.5 text-emerald-700 font-extrabold">
+          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-600 text-xs text-white shadow-sm">
+            2
+          </span>
+          Thanh toán
+        </span>
+        <span className="text-slate-300">———</span>
+        <span className="flex items-center gap-1.5 text-slate-400">
+          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 text-xs text-slate-600">
+            3
+          </span>
+          Hoàn tất
+        </span>
+      </div>
 
-      <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
-        <div className="space-y-4">
-          {/* 1. Địa chỉ */}
+      <h1 className="mb-5 text-2xl font-black text-slate-900">Thông Tin Thanh Toán</h1>
+
+      <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+        <div className="space-y-5">
+          {/* 1. Địa chỉ giao hàng */}
           <Card>
             <CardHeader className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <MapPin className="h-4 w-4 text-primary-600" /> 1. Địa chỉ giao hàng
+              <CardTitle className="flex items-center gap-2 text-base">
+                <MapPin className="h-5 w-5 text-emerald-600" /> 1. Địa chỉ nhận hàng
               </CardTitle>
               <Button variant="outline" size="sm" onClick={() => setAddressDialogOpen(true)}>
-                + Thêm địa chỉ
+                + Thêm địa chỉ mới
               </Button>
             </CardHeader>
             <CardContent>
               {addressesQuery.isError ? (
                 <ErrorState message="Không thể tải danh sách địa chỉ" onRetry={() => addressesQuery.refetch()} />
               ) : addresses.length === 0 ? (
-                <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-700">
-                  Bạn chưa có địa chỉ nào. Hãy thêm địa chỉ giao hàng mới.
+                <p className="rounded-xl bg-amber-50 p-4 text-xs font-semibold text-amber-800">
+                  Bạn chưa có địa chỉ nhận hàng nào. Vui lòng bấm &quot;+ Thêm địa chỉ mới&quot; ở góc trên.
                 </p>
               ) : (
-                <ul className="grid gap-2 sm:grid-cols-2">
+                <ul className="grid gap-3 sm:grid-cols-2">
                   {addresses.map((addr) => (
                     <li key={addr.id}>
                       <label
                         className={cn(
-                          'flex h-full cursor-pointer gap-2 rounded-xl border p-3 transition-colors',
+                          'flex h-full cursor-pointer gap-3 rounded-2xl border p-4 transition-all',
                           addressId === addr.id
-                            ? 'border-primary-600 bg-primary-50/60 ring-1 ring-primary-600'
-                            : 'border-slate-200 hover:border-slate-300',
+                            ? 'border-emerald-600 bg-emerald-50/50 ring-2 ring-emerald-500/20 shadow-sm'
+                            : 'border-slate-200 hover:border-slate-300 bg-white',
                         )}
                       >
                         <input
@@ -238,20 +281,20 @@ export function CheckoutView() {
                           name="address"
                           checked={addressId === addr.id}
                           onChange={() => setAddressId(addr.id)}
-                          className="mt-1 h-4 w-4 accent-emerald-600"
+                          className="mt-0.5 h-4 w-4 accent-emerald-600"
                           aria-label={`Địa chỉ ${addr.fullName}`}
                         />
                         <span className="text-sm">
-                          <span className="font-medium text-slate-800">
+                          <span className="font-bold text-slate-900 flex items-center gap-2">
                             {addr.fullName}
                             {addr.isDefault && (
-                              <span className="ml-2 rounded-full bg-primary-100 px-1.5 py-0.5 text-[10px] font-semibold text-primary-700">
+                              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
                                 Mặc định
                               </span>
                             )}
                           </span>
-                          <span className="block text-xs text-slate-500">{addr.phone}</span>
-                          <span className="mt-0.5 block text-xs text-slate-500">
+                          <span className="block text-xs font-semibold text-slate-600 mt-0.5">{addr.phone}</span>
+                          <span className="mt-1 block text-xs text-slate-500 leading-relaxed">
                             {[addr.line, addr.ward, addr.district, addr.province].join(', ')}
                           </span>
                         </span>
@@ -263,10 +306,12 @@ export function CheckoutView() {
             </CardContent>
           </Card>
 
-          {/* 2. Vận chuyển */}
+          {/* 2. Phương thức vận chuyển */}
           <Card>
             <CardHeader>
-              <CardTitle>2. Phương thức vận chuyển</CardTitle>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Truck className="h-5 w-5 text-emerald-600" /> 2. Hình thức vận chuyển
+              </CardTitle>
             </CardHeader>
             <CardContent>
               {shippingQuery.isLoading ? (
@@ -274,18 +319,18 @@ export function CheckoutView() {
               ) : shippingQuery.isError ? (
                 <ErrorState message="Không thể tải phương thức vận chuyển" onRetry={() => shippingQuery.refetch()} />
               ) : (
-                <ul className="space-y-2">
+                <ul className="space-y-3">
                   {(shippingQuery.data ?? []).map((method) => (
                     <li key={method.id}>
                       <label
                         className={cn(
-                          'flex cursor-pointer items-center justify-between gap-3 rounded-xl border p-3 transition-colors',
+                          'flex cursor-pointer items-center justify-between gap-3 rounded-2xl border p-4 transition-all',
                           shippingMethodId === method.id
-                            ? 'border-primary-600 bg-primary-50/60 ring-1 ring-primary-600'
-                            : 'border-slate-200 hover:border-slate-300',
+                            ? 'border-emerald-600 bg-emerald-50/50 ring-2 ring-emerald-500/20 shadow-sm'
+                            : 'border-slate-200 hover:border-slate-300 bg-white',
                         )}
                       >
-                        <span className="flex items-center gap-2 text-sm">
+                        <span className="flex items-center gap-3 text-sm">
                           <input
                             type="radio"
                             name="shipping"
@@ -295,13 +340,13 @@ export function CheckoutView() {
                             aria-label={method.name}
                           />
                           <span>
-                            <span className="font-medium text-slate-800">{method.name}</span>
-                            <span className="block text-xs text-slate-400">
-                              Dự kiến {method.estimatedDaysMin}–{method.estimatedDaysMax} ngày
+                            <span className="font-bold text-slate-900 block">{method.name}</span>
+                            <span className="text-xs text-slate-400">
+                              Dự kiến giao trong {method.estimatedDaysMin}–{method.estimatedDaysMax} ngày làm việc
                             </span>
                           </span>
                         </span>
-                        <span className="text-sm font-medium text-slate-700">
+                        <span className="text-sm font-extrabold text-emerald-700">
                           {formatCurrency(method.baseFee)}
                         </span>
                       </label>
@@ -312,21 +357,23 @@ export function CheckoutView() {
             </CardContent>
           </Card>
 
-          {/* 3. Thanh toán */}
+          {/* 3. Phương thức thanh toán */}
           <Card>
             <CardHeader>
-              <CardTitle>3. Phương thức thanh toán</CardTitle>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <CreditCard className="h-5 w-5 text-emerald-600" /> 3. Phương thức thanh toán
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <ul className="space-y-2">
+              <ul className="space-y-2.5">
                 {PAYMENT_METHODS.map(({ value, icon, hint }) => (
                   <li key={value}>
                     <label
                       className={cn(
-                        'flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition-colors',
+                        'flex cursor-pointer items-center gap-3.5 rounded-2xl border p-3.5 transition-all',
                         paymentMethod === value
-                          ? 'border-primary-600 bg-primary-50/60 ring-1 ring-primary-600'
-                          : 'border-slate-200 hover:border-slate-300',
+                          ? 'border-emerald-600 bg-emerald-50/50 ring-2 ring-emerald-500/20 shadow-sm'
+                          : 'border-slate-200 hover:border-slate-300 bg-white',
                       )}
                     >
                       <input
@@ -337,100 +384,107 @@ export function CheckoutView() {
                         className="h-4 w-4 accent-emerald-600"
                         aria-label={PAYMENT_METHOD_LABELS[value]}
                       />
-                      <span className="flex items-center gap-2 text-sm">
-                        <span className="text-primary-600">{icon}</span>
+                      <span className="flex items-center gap-2.5 text-sm flex-1">
+                        <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-emerald-700">
+                          {icon}
+                        </span>
                         <span>
-                          <span className="font-medium text-slate-800">{PAYMENT_METHOD_LABELS[value]}</span>
-                          {hint && <span className="block text-xs text-slate-400">{hint}</span>}
+                          <span className="font-bold text-slate-900 block">{PAYMENT_METHOD_LABELS[value]}</span>
+                          {hint && <span className="text-xs text-slate-400">{hint}</span>}
                         </span>
                       </span>
                     </label>
                   </li>
                 ))}
               </ul>
-              <Textarea
-                className="mt-3"
-                placeholder="Ghi chú cho đơn hàng (không bắt buộc)"
-                aria-label="Ghi chú đơn hàng"
-                value={note}
-                maxLength={300}
-                onChange={(e) => setNote(e.target.value)}
-              />
+
+              <div className="mt-4 pt-3 border-t border-slate-100">
+                <label htmlFor="order-note" className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+                  Ghi chú cho đơn hàng
+                </label>
+                <Textarea
+                  id="order-note"
+                  placeholder="Ví dụ: Giao giờ hành chính, gọi trước khi giao..."
+                  aria-label="Ghi chú đơn hàng"
+                  value={note}
+                  maxLength={300}
+                  onChange={(e) => setNote(e.target.value)}
+                />
+              </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Tóm tắt đơn — CHỈ hiển thị số liệu từ backend */}
+        {/* Tóm tắt đơn hàng */}
         <aside aria-label="Tóm tắt đơn hàng">
-          <Card className="sticky top-24">
+          <Card className="sticky top-28">
             <CardHeader>
-              <CardTitle>Đơn hàng của bạn</CardTitle>
+              <CardTitle className="text-base">Chi tiết thanh toán</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3 p-4">
-              <ul className="max-h-40 space-y-2 overflow-y-auto pr-1">
+            <CardContent className="space-y-4 p-5">
+              {/* Product items mini list */}
+              <ul className="max-h-48 space-y-2 overflow-y-auto pr-1">
                 {items.map((item) => (
-                  <li key={item.id} className="flex justify-between gap-2 text-xs text-slate-500">
-                    <span className="line-clamp-1">
+                  <li key={item.id} className="flex justify-between gap-2 text-xs text-slate-600">
+                    <span className="line-clamp-1 font-medium">
                       {item.product.name} × {item.quantity}
+                    </span>
+                    <span className="shrink-0 font-semibold text-slate-800">
+                      {formatCurrency((item.variant?.price ?? item.product.price) * item.quantity)}
                     </span>
                   </li>
                 ))}
               </ul>
 
-              <div className="flex gap-2 border-t border-dashed border-slate-200 pt-3">
-                <Input
-                  placeholder="Nhập mã giảm giá"
-                  aria-label="Mã giảm giá"
-                  value={voucherInput}
-                  onChange={(e) => setVoucherInput(e.target.value)}
-                  className="!py-2 text-xs uppercase"
-                />
-                <Button variant="outline" size="sm" onClick={onApplyVoucher} className="shrink-0">
-                  Áp dụng
-                </Button>
+              {/* Voucher Code Form */}
+              <div className="border-t border-dashed border-slate-200 pt-3">
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Mã giảm giá"
+                    aria-label="Mã giảm giá"
+                    value={voucherInput}
+                    onChange={(e) => setVoucherInput(e.target.value)}
+                    className="!py-2 text-xs uppercase font-bold"
+                  />
+                  <Button variant="outline" size="sm" onClick={onApplyVoucher} className="shrink-0">
+                    Áp dụng
+                  </Button>
+                </div>
+                {voucherError && <p className="mt-1 text-xs text-red-600 font-medium">{voucherError}</p>}
+                {voucherCode && !preview.isError && !preview.isPending && (
+                  <p className="mt-1 text-xs text-emerald-700 font-bold">✓ Đã áp dụng mã {voucherCode}</p>
+                )}
               </div>
-              {voucherError && <p className="-mt-1 text-xs text-red-600">{voucherError}</p>}
-              {voucherCode && !preview.isError && !preview.isPending && (
-                <p className="-mt-1 text-xs text-emerald-600">Đã áp dụng mã {voucherCode}</p>
-              )}
 
-              <dl className="space-y-1.5 border-t border-dashed border-slate-200 pt-3 text-sm">
+              {/* Price Breakdown */}
+              <dl className="space-y-2 border-t border-dashed border-slate-200 pt-3 text-sm">
                 <Row label="Tạm tính" value={preview.data?.subtotalAmount} pending={preview.isFetching} />
-                <Row label="Giảm giá" value={preview.data?.discountAmount} negate pending={preview.isFetching} />
+                <Row label="Giảm giá voucher" value={preview.data?.discountAmount} negate pending={preview.isFetching} />
                 <Row label="Phí vận chuyển" value={preview.data?.shippingFee} pending={preview.isFetching} />
-                <Row label="Thuế (VAT)" value={preview.data?.taxAmount} pending={preview.isFetching} />
+                <Row label="Thuế VAT" value={preview.data?.taxAmount} pending={preview.isFetching} />
               </dl>
 
               <div className="flex items-baseline justify-between border-t border-dashed border-slate-200 pt-3">
-                <span className="font-semibold text-slate-900">Tổng cộng</span>
-                <span className="text-lg font-bold text-accent-600">
+                <span className="font-extrabold text-slate-900">Tổng thanh toán</span>
+                <span className="text-xl font-black text-accent-600">
                   {preview.isFetching ? '…' : formatCurrency(preview.data?.totalAmount ?? 0)}
                 </span>
               </div>
-              {preview.isError && !voucherCode && (
-                <p className="text-xs text-red-600">
-                  Không tính được tạm tính. Vui lòng thử lại.
-                </p>
-              )}
-              {preview.isError && !voucherCode && (
-                <Button variant="ghost" size="sm" className="w-full" onClick={() => preview.refetch()}>
-                  Thử lại
-                </Button>
-              )}
 
               <Button
                 variant="accent"
                 size="lg"
-                className="w-full"
+                className="w-full shadow-lg shadow-accent-500/25"
                 loading={checkout.isPending}
                 disabled={!addressId || !shippingMethodId || (preview.isPending && !preview.data)}
                 onClick={onSubmitCheckout}
               >
-                Đặt hàng
+                <Lock className="mr-1.5 h-4 w-4" /> Đặt hàng an toàn
               </Button>
-              <p className="text-center text-[11px] leading-relaxed text-slate-400">
-                Bằng việc đặt hàng, bạn đồng ý với điều khoản sử dụng của HomeMart.
-              </p>
+
+              <div className="flex items-center justify-center gap-1.5 text-[11px] font-medium text-slate-400 pt-1">
+                <ShieldCheck className="h-4 w-4 text-emerald-600" /> Bảo mật thanh toán SSL 256-bit
+              </div>
             </CardContent>
           </Card>
         </aside>
@@ -451,11 +505,6 @@ export function CheckoutView() {
           })
         }
       />
-
-      {/* Giữ link tới trang đơn hàng để điều hướng nhanh sau đặt hàng */}
-      <Link href="/account/orders" className="sr-only">
-        Đơn hàng của tôi
-      </Link>
     </div>
   );
 }
@@ -474,7 +523,7 @@ function Row({
   return (
     <div className="flex justify-between text-slate-600">
       <dt>{label}</dt>
-      <dd className={cn('tabular-nums', negate && 'text-emerald-600')}>
+      <dd className={cn('tabular-nums font-semibold', negate && 'text-emerald-700')}>
         {pending || value === undefined ? '—' : `${negate ? '-' : ''}${formatCurrency(value)}`}
       </dd>
     </div>
@@ -516,48 +565,48 @@ function AddressDialog({
           onSubmit({ ...data, isDefault: true });
           reset();
         })}
-        className="space-y-3"
+        className="space-y-3.5"
       >
         <div>
-          <label htmlFor="ad-name" className="mb-1 block text-sm font-medium text-slate-700">
+          <label htmlFor="ad-name" className="mb-1 block text-xs font-bold uppercase tracking-wider text-slate-700">
             Họ và tên
           </label>
-          <Input id="ad-name" {...register('fullName')} error={errors.fullName?.message} />
+          <Input id="ad-name" placeholder="Nguyễn Văn A" {...register('fullName')} error={errors.fullName?.message} />
         </div>
         <div>
-          <label htmlFor="ad-phone" className="mb-1 block text-sm font-medium text-slate-700">
+          <label htmlFor="ad-phone" className="mb-1 block text-xs font-bold uppercase tracking-wider text-slate-700">
             Số điện thoại
           </label>
-          <Input id="ad-phone" inputMode="tel" {...register('phone')} error={errors.phone?.message} />
+          <Input id="ad-phone" inputMode="tel" placeholder="0912345678" {...register('phone')} error={errors.phone?.message} />
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div>
-            <label htmlFor="ad-province" className="mb-1 block text-sm font-medium text-slate-700">
+            <label htmlFor="ad-province" className="mb-1 block text-xs font-bold uppercase tracking-wider text-slate-700">
               Tỉnh/Thành phố
             </label>
-            <Input id="ad-province" {...register('province')} error={errors.province?.message} />
+            <Input id="ad-province" placeholder="Hà Nội" {...register('province')} error={errors.province?.message} />
           </div>
           <div>
-            <label htmlFor="ad-district" className="mb-1 block text-sm font-medium text-slate-700">
+            <label htmlFor="ad-district" className="mb-1 block text-xs font-bold uppercase tracking-wider text-slate-700">
               Quận/Huyện
             </label>
-            <Input id="ad-district" {...register('district')} error={errors.district?.message} />
+            <Input id="ad-district" placeholder="Cầu Giấy" {...register('district')} error={errors.district?.message} />
           </div>
           <div>
-            <label htmlFor="ad-ward" className="mb-1 block text-sm font-medium text-slate-700">
+            <label htmlFor="ad-ward" className="mb-1 block text-xs font-bold uppercase tracking-wider text-slate-700">
               Phường/Xã
             </label>
-            <Input id="ad-ward" {...register('ward')} error={errors.ward?.message} />
+            <Input id="ad-ward" placeholder="Dịch Vọng" {...register('ward')} error={errors.ward?.message} />
           </div>
         </div>
         <div>
-          <label htmlFor="ad-line" className="mb-1 block text-sm font-medium text-slate-700">
+          <label htmlFor="ad-line" className="mb-1 block text-xs font-bold uppercase tracking-wider text-slate-700">
             Địa chỉ cụ thể (số nhà, tên đường)
           </label>
-          <Input id="ad-line" {...register('line')} error={errors.line?.message} />
+          <Input id="ad-line" placeholder="Số 123 đường Cầu Giấy" {...register('line')} error={errors.line?.message} />
         </div>
-        <Button type="submit" className="w-full" loading={submitting}>
-          Lưu địa chỉ
+        <Button type="submit" className="w-full mt-2" loading={submitting}>
+          Lưu địa chỉ nhận hàng
         </Button>
       </form>
     </DialogLite>

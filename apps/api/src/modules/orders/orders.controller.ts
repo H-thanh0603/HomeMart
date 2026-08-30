@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, Param, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsArray, IsIn, IsInt, IsOptional, IsString, MaxLength, Min, ValidateNested } from 'class-validator';
@@ -14,7 +14,9 @@ export class CheckoutItemDto {
 }
 
 export class CheckoutBodyDto {
-  @IsOptional() @IsArray() @ValidateNested({ each: true })
+  // @Type is required: without it the ValidationPipe strips productId/quantity
+  // from the nested plain objects (whitelist) and checkout 500s downstream.
+  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => CheckoutItemDto)
   items?: CheckoutItemDto[];
 
   @IsString() addressId!: string;
@@ -25,7 +27,8 @@ export class CheckoutBodyDto {
 }
 
 export class PreviewDto {
-  @IsOptional() items?: CheckoutItemDto[];
+  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => CheckoutItemDto)
+  items?: CheckoutItemDto[];
   @IsOptional() @IsString() shippingMethodId?: string;
   @IsOptional() @IsString() voucherCode?: string;
 }
@@ -55,9 +58,16 @@ export class OrdersController {
   }
 
   @Post('checkout')
-  @ApiOperation({ summary: 'Đặt hàng — backend re-price + reserve stock trong 1 transaction' })
-  checkout(@CurrentUser('id') userId: string, @Body() dto: CheckoutBodyDto) {
-    return this.ordersService.checkout(userId, dto as CheckoutDto);
+  @ApiOperation({ summary: 'Đặt hàng — backend re-price + reserve stock trong 1 transaction. Yêu cầu header Idempotency-Key (UUID do client sinh).' })
+  checkout(
+    @CurrentUser('id') userId: string,
+    @Body() dto: CheckoutBodyDto,
+    @Headers('idempotency-key') idempotencyKey?: string,
+  ) {
+    if (!idempotencyKey || !/^[\w-]{8,64}$/.test(idempotencyKey)) {
+      throw new BadRequestException('Missing or invalid Idempotency-Key header (8-64 chars)');
+    }
+    return this.ordersService.checkout(userId, dto as CheckoutDto, idempotencyKey);
   }
 
   @Get()

@@ -60,7 +60,12 @@ export function useCheckout() {
       voucherCode?: string;
       paymentMethod: string;
       note?: string;
-    }) => postData<CheckoutResult>('/orders/checkout', body),
+      /** One key per user intent — the backend returns the same order on retry. */
+      idempotencyKey: string;
+    }) =>
+      postData<CheckoutResult>('/orders/checkout', body, {
+        'Idempotency-Key': body.idempotencyKey,
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cart'] });
       queryClient.invalidateQueries({ queryKey: ['orders'] });

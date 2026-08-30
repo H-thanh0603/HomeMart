@@ -1,5 +1,6 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { createHash, randomInt } from 'crypto';
 import { OrderStatus, PaymentMethodType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../infra/prisma.service';
 import { BusinessRuleError } from '../../common/exceptions/business.errors';
@@ -90,8 +91,25 @@ export class OrdersService {
    * Full checkout inside ONE transaction:
    * re-price → reserve inventory (FOR UPDATE) → consume voucher atomically →
    * create order with item snapshots → payment record.
+   *
+   * Idempotent per (userId, Idempotency-Key): a replayed key returns the
+   * original order without creating a duplicate or re-reserving stock.
    */
-  async checkout(userId: string, dto: CheckoutDto) {
+  async checkout(userId: string, dto: CheckoutDto, idempotencyKey: string) {
+    const requestHash = createHash('sha256').update(JSON.stringify(dto)).digest('hex');
+
+    // Replay check: same user+key → return the original order untouched.
+    const replayed = await this.prisma.idempotencyRecord.findUnique({
+      where: { userId_key: { userId, key: idempotencyKey } },
+      include: { order: { include: { items: true, payments: true } } },
+    });
+    if (replayed) {
+      if (replayed.requestHash !== requestHash) {
+        throw new ConflictException('Idempotency-Key already used with a different request payload');
+      }
+      return replayed.order;
+    }
+
     // Pre-fetch address outside tx (validated)
     const address = await this.prisma.address.findFirst({
       where: { id: dto.addressId, userId, deletedAt: null },
@@ -125,105 +143,134 @@ export class OrdersService {
     const taxAmount = Math.round((subtotal - discount) * taxRate);
     const totalAmount = Math.max(0, subtotal - discount + shippingFee + taxAmount);
 
-    const seq = Date.now() % 1000000000; // uniqueness enforced by retry below
-    const orderNumber = generateOrderNumber(seq);
+    // orderNumber collision is astronomically unlikely with a random seq, but
+    // a P2002 on it retries with a fresh number instead of failing the checkout.
+    const MAX_ATTEMPTS = 3;
+    let lastError: unknown;
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      const orderNumber = generateOrderNumber(randomInt(1_000_000));
 
-    try {
-      const order = await this.prisma.$transaction(
-        async (tx) => {
-          // Re-price INSIDE the transaction (price could have changed since preview)
-          const txLines = [];
-          for (const line of lines) {
-            const fresh = await this.fetchLine(tx, line.productId, line.variantId, line.quantity);
-            txLines.push(fresh);
-          }
-          const txSubtotal = txLines.reduce((s, l) => s + l.lineTotal, 0);
-          if (txSubtotal !== subtotal) {
-            throw new BusinessRuleError('Product prices have changed, please review your cart', 'PRICE_CHANGED');
-          }
+      try {
+        const order = await this.prisma.$transaction(
+          async (tx) => {
+            // Re-price INSIDE the transaction (price could have changed since preview)
+            const txLines = [];
+            for (const line of lines) {
+              const fresh = await this.fetchLine(tx, line.productId, line.variantId, line.quantity);
+              txLines.push(fresh);
+            }
+            const txSubtotal = txLines.reduce((s, l) => s + l.lineTotal, 0);
+            if (txSubtotal !== subtotal) {
+              throw new BusinessRuleError('Product prices have changed, please review your cart', 'PRICE_CHANGED');
+            }
 
-          // Reserve stock (row locks, rolls back everything on OUT_OF_STOCK)
-          await this.inventory.reserve(tx, txLines.map(toReserveItem), orderNumber);
+            // Reserve stock (row locks, rolls back everything on OUT_OF_STOCK)
+            await this.inventory.reserve(tx, txLines.map(toReserveItem), orderNumber);
 
-          // Consume voucher atomically (BR-3)
-          let appliedVoucherCode: string | null = null;
-          if (voucherId && dto.voucherCode) {
-            const consumed = await this.promotions.consumeAtomically(tx, voucherId, userId);
-            if (!consumed) throw new BusinessRuleError('Voucher is no longer available', 'VOUCHER_LIMIT_REACHED');
-            await tx.voucherUsage.create({ data: { voucherId, userId, orderId: 'PENDING' } }); // updated below
-            appliedVoucherCode = dto.voucherCode.toUpperCase();
-          }
+            // Consume voucher atomically (BR-3)
+            let appliedVoucherCode: string | null = null;
+            if (voucherId && dto.voucherCode) {
+              const consumed = await this.promotions.consumeAtomically(tx, voucherId, userId);
+              if (!consumed) throw new BusinessRuleError('Voucher is no longer available', 'VOUCHER_LIMIT_REACHED');
+              await tx.voucherUsage.create({ data: { voucherId, userId, orderId: 'PENDING' } }); // updated below
+              appliedVoucherCode = dto.voucherCode.toUpperCase();
+            }
 
-          const created = await tx.order.create({
-            data: {
-              orderNumber,
-              userId,
-              status: OrderStatus.PENDING,
-              contactName: address.fullName,
-              contactPhone: address.phone,
-              shippingProvince: address.province,
-              shippingDistrict: address.district,
-              shippingWard: address.ward,
-              shippingLine: address.line,
-              subtotalAmount: txSubtotal,
-              discountAmount: discount,
-              shippingFee,
-              taxAmount,
-              totalAmount,
-              shippingMethodId: dto.shippingMethodId,
-              voucherCode: appliedVoucherCode,
-              note: dto.note,
-              version: 1,
-              items: {
-                create: txLines.map((l) => ({
-                  productId: l.productId,
-                  variantId: l.variantId ?? null,
-                  productName: l.name,
-                  productImage: l.image,
-                  sku: l.sku,
-                  variantAttributes: l.variantAttributes as object | undefined,
-                  unitPrice: l.unitPrice,
-                  quantity: l.quantity,
-                  lineTotal: l.lineTotal,
-                })),
-              },
-              statusHistory: { create: { fromStatus: null, toStatus: OrderStatus.PENDING, actorId: userId } },
-              payments: {
-                create: {
-                  method: dto.paymentMethod,
-                  amount: totalAmount,
-                  status: 'PENDING',
+            const created = await tx.order.create({
+              data: {
+                orderNumber,
+                userId,
+                status: OrderStatus.PENDING,
+                contactName: address.fullName,
+                contactPhone: address.phone,
+                shippingProvince: address.province,
+                shippingDistrict: address.district,
+                shippingWard: address.ward,
+                shippingLine: address.line,
+                subtotalAmount: txSubtotal,
+                discountAmount: discount,
+                shippingFee,
+                taxAmount,
+                totalAmount,
+                shippingMethodId: dto.shippingMethodId,
+                voucherCode: appliedVoucherCode,
+                note: dto.note,
+                version: 1,
+                items: {
+                  create: txLines.map((l) => ({
+                    productId: l.productId,
+                    variantId: l.variantId ?? null,
+                    productName: l.name,
+                    productImage: l.image,
+                    sku: l.sku,
+                    variantAttributes: l.variantAttributes as object | undefined,
+                    unitPrice: l.unitPrice,
+                    quantity: l.quantity,
+                    lineTotal: l.lineTotal,
+                  })),
+                },
+                statusHistory: { create: { fromStatus: null, toStatus: OrderStatus.PENDING, actorId: userId } },
+                payments: {
+                  create: {
+                    method: dto.paymentMethod,
+                    amount: totalAmount,
+                    status: 'PENDING',
+                  },
                 },
               },
-            },
-            include: { items: true, payments: true },
-          });
-
-          if (appliedVoucherCode && voucherId) {
-            await tx.voucherUsage.updateMany({
-              where: { userId, orderId: 'PENDING', voucherId },
-              data: { orderId: created.id },
+              include: { items: true, payments: true },
             });
+
+            if (appliedVoucherCode && voucherId) {
+              await tx.voucherUsage.updateMany({
+                where: { userId, orderId: 'PENDING', voucherId },
+                data: { orderId: created.id },
+              });
+            }
+
+            // Claim the idempotency key in the same tx. A concurrent duplicate
+            // submit loses here on the unique constraint and returns the winner.
+            await tx.idempotencyRecord.create({
+              data: { userId, key: idempotencyKey, requestHash, orderId: created.id },
+            });
+
+            return created;
+          },
+          { timeout: 15000 },
+        );
+
+        this.events.emit('order.created', { orderId: order.id, userId, orderNumber: order.orderNumber, total: order.totalAmount });
+        this.logger.log(`Order ${order.orderNumber} created by user ${userId}, total=${order.totalAmount}`);
+
+        // Create carrier shipment asynchronously (non-blocking)
+        this.shipping.createShipment(order.id, dto.shippingMethodId).catch((e) =>
+          this.logger.warn(`Failed to create carrier shipment for ${order.orderNumber}: ${(e as Error).message}`),
+        );
+
+        return order;
+      } catch (e) {
+        if (e instanceof BusinessRuleError || e instanceof NotFoundException || e instanceof ForbiddenException || e instanceof BadRequestException) throw e;
+
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+          // A concurrent identical submit won the idempotency race → return its order
+          const winner = await this.prisma.idempotencyRecord.findUnique({
+            where: { userId_key: { userId, key: idempotencyKey } },
+            include: { order: { include: { items: true, payments: true } } },
+          });
+          if (winner) return winner.order;
+
+          if (/order_?number/i.test(String((e.meta as { target?: unknown })?.target ?? ''))) {
+            lastError = e;
+            continue; // retry with a fresh order number
           }
-          return created;
-        },
-        { timeout: 15000 },
-      );
+        }
 
-      this.events.emit('order.created', { orderId: order.id, userId, orderNumber: order.orderNumber, total: order.totalAmount });
-      this.logger.log(`Order ${order.orderNumber} created by user ${userId}, total=${order.totalAmount}`);
-
-      // Create carrier shipment asynchronously (non-blocking)
-      this.shipping.createShipment(order.id, dto.shippingMethodId).catch((e) =>
-        this.logger.warn(`Failed to create carrier shipment for ${order.orderNumber}: ${(e as Error).message}`),
-      );
-
-      return order;
-    } catch (e) {
-      if (e instanceof BusinessRuleError || e instanceof NotFoundException || e instanceof ForbiddenException || e instanceof BadRequestException) throw e;
-      this.logger.error(`Checkout failed: ${(e as Error).message}`, (e as Error).stack);
-      throw new BusinessRuleError('Checkout failed, please retry', 'CHECKOUT_FAILED');
+        this.logger.error(`Checkout failed: ${(e as Error).message}`, (e as Error).stack);
+        throw new BusinessRuleError('Checkout failed, please retry', 'CHECKOUT_FAILED');
+      }
     }
+    this.logger.error(`Checkout failed after ${MAX_ATTEMPTS} order-number attempts: ${(lastError as Error)?.message}`);
+    throw new BusinessRuleError('Checkout failed, please retry', 'CHECKOUT_FAILED');
   }
 
   listMine(userId: string, page = 1, limit = 10, status?: OrderStatus) {

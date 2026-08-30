@@ -128,8 +128,8 @@ export async function getPage<T>(
   return { data: items, meta };
 }
 
-export async function postData<T>(url: string, body?: unknown): Promise<T> {
-  const res = await api.post<ApiEnvelope<T>>(url, body);
+export async function postData<T>(url: string, body?: unknown, headers?: Record<string, string>): Promise<T> {
+  const res = await api.post<ApiEnvelope<T>>(url, body, { headers });
   return res.data.data;
 }
 

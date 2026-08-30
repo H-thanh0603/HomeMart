@@ -165,6 +165,7 @@ model User {
   carts           Cart[]
   wishlist        Wishlist?
   orders          Order[]
+  idempotencyRecords IdempotencyRecord[]
   reviews         Review[]
   voucherUsages   VoucherUsage[]
   notifications   Notification[]
@@ -458,6 +459,7 @@ model CartItem {
   updatedAt DateTime @updatedAt
 
   @@unique([cartId, productId, variantId])
+  @@index([productId]) // FK lookups when deleting/soft-deleting products
   @@map("cart_items")
 }
 
@@ -485,6 +487,7 @@ model WishlistItem {
   createdAt DateTime @default(now())
 
   @@unique([wishlistId, productId, variantId])
+  @@index([productId])
   @@map("wishlist_items")
 }
 
@@ -525,7 +528,7 @@ model Order {
   items           OrderItem[]
   statusHistory   OrderStatusHistory[]
   payments        Payment[]
-
+  idempotencyRecord IdempotencyRecord?
 
   user User @relation(fields: [userId], references: [id])
 
@@ -536,7 +539,7 @@ model Order {
   deletedAt DateTime?
 
   @@index([userId, createdAt(sort: Desc)])
-  @@index([status])
+  @@index([status, createdAt(sort: Desc)]) // admin queue: filter status + sort newest
   @@index([createdAt(sort: Desc)])
   @@map("orders")
 }
@@ -564,6 +567,7 @@ model OrderItem {
 
   @@index([orderId])
   @@index([productId])
+  @@index([variantId])
   @@map("order_items")
 }
 
@@ -787,6 +791,23 @@ model Notification {
 
   @@index([userId, createdAt(sort: Desc)])
   @@map("notifications")
+}
+
+/// One client-generated checkout attempt. A replayed Idempotency-Key returns
+/// the original order instead of creating a duplicate (double-click, retry).
+model IdempotencyRecord {
+  id          String   @id @default(uuid())
+  userId      String
+  key         String
+  requestHash String
+  orderId     String   @unique
+  createdAt   DateTime @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
+  @@map("idempotency_records")
 }
 
 model AuditLog {
