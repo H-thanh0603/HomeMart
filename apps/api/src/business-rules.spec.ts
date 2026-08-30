@@ -16,7 +16,12 @@ const prisma = new PrismaClient();
 jest.setTimeout(30000);
 
 async function seedFixture() {
-  const cat = await prisma.category.findFirstOrThrow();
+  // CI runs against a freshly-migrated empty DB — never assume seed data.
+  const cat = await prisma.category.upsert({
+    where: { slug: 'test-integration' },
+    update: {},
+    create: { slug: 'test-integration', name: 'Test Integration' },
+  });
   const product = await prisma.product.create({
     data: {
       sku: `TEST-${Date.now()}`,
