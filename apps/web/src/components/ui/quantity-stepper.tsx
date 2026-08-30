@@ -8,7 +8,7 @@ interface QuantityStepperProps {
   onChange: (value: number) => void;
   min?: number;
   max?: number;
-  size?: 'sm' | 'md';
+  size?: 'sm' | 'md' | 'lg';
   disabled?: boolean;
 }
 
@@ -21,11 +21,16 @@ export function QuantityStepper({
   disabled,
 }: QuantityStepperProps) {
   const btn =
-    'flex items-center justify-center text-slate-600 transition-colors hover:bg-slate-100 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-600';
-  const dimension = size === 'sm' ? 'h-7 w-7 text-xs' : 'h-9 w-9';
+    'flex items-center justify-center text-slate-600 transition-colors hover:bg-slate-100/90 active:bg-slate-200 disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500';
+  
+  const dimension = {
+    sm: 'h-7 w-7 text-xs',
+    md: 'h-9 w-9 text-sm',
+    lg: 'h-11 w-11 text-base',
+  }[size];
 
   return (
-    <div className="inline-flex items-center overflow-hidden rounded-xl border border-slate-300 bg-white">
+    <div className="inline-flex items-center overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-100">
       <button
         type="button"
         aria-label="Giảm số lượng"
@@ -33,13 +38,13 @@ export function QuantityStepper({
         disabled={disabled || value <= min}
         onClick={() => onChange(Math.max(min, value - 1))}
       >
-        <Minus className={size === 'sm' ? 'h-3 w-3' : 'h-4 w-4'} />
+        <Minus className={size === 'sm' ? 'h-3 w-3' : size === 'lg' ? 'h-5 w-5' : 'h-4 w-4'} />
       </button>
       <span
         aria-live="polite"
         className={cn(
-          'flex items-center justify-center border-x border-slate-300 font-medium tabular-nums',
-          size === 'sm' ? 'h-7 w-8 text-xs' : 'h-9 w-10 text-sm',
+          'flex items-center justify-center border-x border-slate-100 font-semibold tabular-nums text-slate-800',
+          size === 'sm' ? 'h-7 w-8 text-xs' : size === 'lg' ? 'h-11 w-12 text-base' : 'h-9 w-10 text-sm',
         )}
       >
         {value}
@@ -51,7 +56,7 @@ export function QuantityStepper({
         disabled={disabled || value >= max}
         onClick={() => onChange(Math.min(max, value + 1))}
       >
-        <Plus className={size === 'sm' ? 'h-3 w-3' : 'h-4 w-4'} />
+        <Plus className={size === 'sm' ? 'h-3 w-3' : size === 'lg' ? 'h-5 w-5' : 'h-4 w-4'} />
       </button>
     </div>
   );

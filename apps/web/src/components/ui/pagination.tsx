@@ -20,19 +20,22 @@ export function Pagination({
   const pages = arr;
 
   const navBtn =
-    'flex h-9 items-center justify-center gap-1 rounded-xl px-3 text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-40';
+    'flex h-10 items-center justify-center gap-1 rounded-xl px-3.5 text-sm font-semibold transition-all duration-150 disabled:pointer-events-none disabled:opacity-40';
 
   return (
-    <nav aria-label="Phân trang" className="mt-6 flex flex-wrap items-center justify-center gap-1.5">
+    <nav aria-label="Phân trang" className="mt-8 flex flex-wrap items-center justify-center gap-2">
       <button
-        className={cn(navBtn, 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50')}
+        className={cn(
+          navBtn,
+          'border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 hover:border-slate-300',
+        )}
         disabled={page <= 1}
         onClick={() => onChange(page - 1)}
         aria-label="Trang trước"
       >
         <ChevronLeft className="h-4 w-4" /> Trước
       </button>
-      {pages[0] > 1 && <span className="px-1 text-slate-400">…</span>}
+      {pages[0] > 1 && <span className="px-1.5 font-medium text-slate-400">…</span>}
       {pages.map((p) => (
         <button
           key={p}
@@ -40,18 +43,21 @@ export function Pagination({
           aria-current={p === page ? 'page' : undefined}
           className={cn(
             navBtn,
-            'min-w-[36px]',
+            'min-w-[40px]',
             p === page
-              ? 'bg-primary-600 text-white shadow-sm'
-              : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50',
+              ? 'bg-gradient-to-r from-primary-600 to-emerald-600 text-white shadow-md shadow-emerald-600/25'
+              : 'border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 hover:border-slate-300',
           )}
         >
           {p}
         </button>
       ))}
-      {pages[pages.length - 1] < totalPages && <span className="px-1 text-slate-400">…</span>}
+      {pages[pages.length - 1] < totalPages && <span className="px-1.5 font-medium text-slate-400">…</span>}
       <button
-        className={cn(navBtn, 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50')}
+        className={cn(
+          navBtn,
+          'border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 hover:border-slate-300',
+        )}
         disabled={page >= totalPages}
         onClick={() => onChange(page + 1)}
         aria-label="Trang sau"

@@ -16,20 +16,24 @@ export function AuthCard({
   footer?: ReactNode;
 }) {
   return (
-    <div className="mx-auto flex max-w-md flex-col justify-center px-2 py-8">
-      <div className="mb-5 flex flex-col items-center gap-1">
-        <Link href="/" aria-label="HomeMart — Trang chủ" className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary-700 text-xl font-black text-white">
+    <div className="mx-auto flex max-w-md flex-col justify-center px-3 py-10">
+      <div className="mb-6 flex flex-col items-center gap-1.5 text-center">
+        <Link
+          href="/"
+          aria-label="HomeMart — Trang chủ"
+          className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-tr from-primary-600 to-emerald-500 text-2xl font-black text-white shadow-lg shadow-emerald-600/30 transition-transform hover:scale-105"
+        >
           H
         </Link>
-        <h1 className="mt-2 text-xl font-bold text-slate-900">{title}</h1>
+        <h1 className="mt-3 text-2xl font-black tracking-tight text-slate-900">{title}</h1>
         {subtitle && <p className="text-sm text-slate-500">{subtitle}</p>}
       </div>
 
-      <div className="rounded-xl bg-white p-5 shadow-card ring-1 ring-slate-100 sm:p-6">
+      <div className="rounded-3xl bg-white p-6 shadow-card ring-1 ring-slate-100/90 sm:p-8">
         {children}
       </div>
 
-      {footer && <p className="mt-4 text-center text-sm text-slate-500">{footer}</p>}
+      {footer && <p className="mt-5 text-center text-sm font-medium text-slate-500">{footer}</p>}
     </div>
   );
 }
