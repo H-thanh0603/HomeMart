@@ -5,6 +5,8 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   API_PORT: z.coerce.number().default(4000),
   WEB_URL: z.string().default('http://localhost:3000'),
+  /** Public base URL of THIS api — used for gateway IPN/webhook callbacks. */
+  API_PUBLIC_URL: z.string().default('http://localhost:4000'),
 
   DATABASE_URL: z.string(),
   REDIS_URL: z.string().default('redis://localhost:6379'),
@@ -16,6 +18,12 @@ const envSchema = z.object({
 
   TAX_RATE: z.coerce.number().min(0).max(1).default(0.08),
   ORDER_PAYMENT_TIMEOUT_MINUTES: z.coerce.number().default(30),
+
+  // Rate limiting — raise RATE_LIMIT_PER_MIN during flash sales (e.g. 600)
+  RATE_LIMIT_PER_MIN: z.coerce.number().default(120),
+  // Multiplier for per-endpoint auth throttles (login/register/...).
+  // Raise during load tests: AUTH_THROTTLE_MULTIPLIER=500
+  AUTH_THROTTLE_MULTIPLIER: z.coerce.number().min(1).default(1),
 
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().optional(),
@@ -39,6 +47,7 @@ const envSchema = z.object({
   VNPAY_TMN_CODE: z.string().optional().default('HOMEMART'),
   VNPAY_HASH_SECRET: z.string().optional().default('dev-vnpay-secret'),
   VNPAY_URL: z.string().default('https://sandbox.vnpayment.vn/paymentv2/vpcpay.html'),
+  VNPAY_API_URL: z.string().default('https://sandbox.vnpayment.vn/merchant_webapi/api/transaction'),
   VNPAY_RETURN_URL: z.string().default('http://localhost:3000/payments/vnpay/return'),
   MOMO_PARTNER_CODE: z.string().optional().default('HOMEMART'),
   MOMO_ACCESS_KEY: z.string().optional().default('dev-momo-access'),
@@ -46,6 +55,10 @@ const envSchema = z.object({
   MOMO_API_URL: z.string().default('https://test-payment.momo.vn/v2/gateway/api/create'),
   MOMO_RETURN_URL: z.string().default('http://localhost:3000/payments/momo/return'),
   STRIPE_SECRET_KEY: z.string().optional().default(''),
+  STRIPE_WEBHOOK_SECRET: z.string().optional().default(''),
+
+  // Bank transfer instructions shown to customers (BANK_TRANSFER method)
+  BANK_ACCOUNT_INFO: z.string().optional().default(''),
 
   // Carrier (GHN / GHTK)
   GHN_TOKEN: z.string().optional(),
@@ -75,8 +88,16 @@ const PROD_FORBIDDEN_DEFAULTS: Array<[keyof Env & string, string]> = [
   ['JWT_ACCESS_SECRET', 'change-me-access-secret-please-32-chars-min'],
   ['JWT_REFRESH_SECRET', 'change-me-refresh-secret-please-32-chars-min'],
   ['VNPAY_HASH_SECRET', 'dev-vnpay-secret'],
+  ['VNPAY_TMN_CODE', 'HOMEMART'],
   ['MOMO_ACCESS_KEY', 'dev-momo-access'],
   ['MOMO_SECRET_KEY', 'dev-momo-secret'],
+  ['MOMO_PARTNER_CODE', 'HOMEMART'],
+];
+
+const SANDBOX_URLS: Array<[keyof Env & string, RegExp]> = [
+  ['VNPAY_URL', /sandbox\.vnpayment\.vn/i],
+  ['VNPAY_API_URL', /sandbox\.vnpayment\.vn/i],
+  ['MOMO_API_URL', /test-payment\.momo\.vn/i],
 ];
 
 let cached: Env | null = null;
@@ -97,6 +118,26 @@ export function getEnv(): Env {
       );
       if (offenders.length > 0) {
         throw new Error(`Refusing to start in production with insecure configuration:\n${offenders.join('\n')}`);
+      }
+
+      // Conditional requirements — only when the integration is actually enabled.
+      const missing: string[] = [];
+      if (env.STRIPE_SECRET_KEY && !env.STRIPE_WEBHOOK_SECRET) {
+        missing.push('  - STRIPE_WEBHOOK_SECRET is required when STRIPE_SECRET_KEY is set (webhook cannot be verified otherwise)');
+      }
+      if (env.GHN_TOKEN && !env.GHN_WEBHOOK_TOKEN) {
+        missing.push('  - GHN_WEBHOOK_TOKEN is required in production when GHN_TOKEN is set (carrier webhook fails closed)');
+      }
+      // Credentials present but still pointed at a sandbox gateway = money lost
+      // silently. Refuse to boot; operator must set the production URL.
+      for (const [key, pattern] of SANDBOX_URLS) {
+        const hasCredential = key.startsWith('VNPAY') ? Boolean(env.VNPAY_HASH_SECRET) : Boolean(env.MOMO_SECRET_KEY && !env.MOMO_SECRET_KEY.startsWith('dev-'));
+        if (hasCredential && pattern.test(String(env[key] ?? ''))) {
+          missing.push(`  - ${key} still points to a sandbox gateway while production credentials are configured`);
+        }
+      }
+      if (missing.length > 0) {
+        throw new Error(`Refusing to start in production with incomplete configuration:\n${missing.join('\n')}`);
       }
     }
 

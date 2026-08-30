@@ -17,6 +17,15 @@ export class AdminListOrdersQuery {
   @IsOptional() @IsIn(Object.values(OrderStatus)) status?: OrderStatus;
 }
 
+export class UpdateOrderStatusDto {
+  @IsIn(Object.values(OrderStatus)) status!: OrderStatus;
+  @IsOptional() @IsString() note?: string;
+}
+
+export class ConfirmCodDto {
+  @IsOptional() @IsString() note?: string;
+}
+
 @ApiTags('admin/orders')
 @ApiBearerAuth()
 @Roles(Role.STAFF)
@@ -58,7 +67,7 @@ export class AdminOrdersController {
   async updateStatus(
     @CurrentUser() actor: { id: string; role: Role },
     @Param('id') id: string,
-    @Body() dto: { status: OrderStatus; note?: string },
+    @Body() dto: UpdateOrderStatusDto,
   ) {
     // RETURNED/REFUNDED touches money — require MANAGER+
     if (
@@ -73,7 +82,7 @@ export class AdminOrdersController {
   /** COD collected on delivery. */
   @Post(':id/confirm-cod')
   @Audit('order.cod_confirm', 'Order')
-  confirmCod(@Param('id') orderId: string) {
+  confirmCod(@Param('id') orderId: string, @Body() _dto?: ConfirmCodDto) {
     return this.paymentsService.confirmCodOnDelivery(orderId);
   }
 

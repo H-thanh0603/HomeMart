@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { timingSafeEqual } from 'crypto';
 import {
   CarrierFeeInput,
   CarrierFeeResult,
@@ -6,6 +7,7 @@ import {
   CreateShipmentInput,
   CreateShipmentResult,
 } from '../carrier-provider.interface';
+import { getEnv } from '../../../config/env';
 
 /**
  * GiaoHangNhanh (GHN) integration.
@@ -33,9 +35,10 @@ export class GhnProvider implements CarrierProvider {
   private readonly apiUrl: string;
 
   constructor() {
-    this.token = process.env.GHN_TOKEN ?? '';
-    this.shopId = process.env.GHN_SHOP_ID ?? '';
-    this.apiUrl = process.env.GHN_API_URL ?? 'https://dev-online.ghn.vn/shipping/v2';
+    const env = getEnv();
+    this.token = env.GHN_TOKEN ?? '';
+    this.shopId = env.GHN_SHOP_ID ?? '';
+    this.apiUrl = env.GHN_API_URL ?? 'https://dev-online.ghn.vn/shipping/v2';
   }
 
   // ─── Mock fallback ───
@@ -150,10 +153,20 @@ export class GhnProvider implements CarrierProvider {
     };
   }
 
+  /**
+   * Fail-closed: without a configured GHN_WEBHOOK_TOKEN no webhook is trusted.
+   * A forged 'delivered' event would otherwise move orders past confirmation.
+   */
   verifyWebhook(headers: Record<string, string>, _body: unknown): boolean {
-    const token = process.env.GHN_WEBHOOK_TOKEN;
-    if (!token) return true; // skip verification in dev
-    return headers['x-token'] === token || headers['x-giaohangnhanh-token'] === token;
+    const token = getEnv().GHN_WEBHOOK_TOKEN;
+    if (!token) {
+      this.logger.warn('GHN_WEBHOOK_TOKEN is not set — rejecting carrier webhook');
+      return false;
+    }
+    const provided = headers['x-token'] ?? headers['x-giaohangnhanh-token'] ?? '';
+    const a = Buffer.from(token);
+    const b = Buffer.from(provided);
+    return a.length === b.length && timingSafeEqual(a, b);
   }
 
   parseWebhook(body: unknown): {

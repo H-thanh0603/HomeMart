@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundEx
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PaymentMethodType, PaymentStatus } from '@prisma/client';
 import { PrismaService } from '../../infra/prisma.service';
+import { getEnv } from '../../config/env';
 import { BusinessRuleError } from '../../common/exceptions/business.errors';
 import { InventoryService } from '../inventory/inventory.service';
 import { CreatePaymentResult, PaymentProvider } from './payment-provider.interface';
@@ -70,10 +71,11 @@ export class PaymentsService {
         clientIp,
       });
     } else {
-      // BANK_TRANSFER
+      // BANK_TRANSFER — account details come from BANK_ACCOUNT_INFO env
+      const bankInfo = getEnv().BANK_ACCOUNT_INFO || 'Thông tin tài khoản chưa được cấu hình (BANK_ACCOUNT_INFO)';
       result = {
         method: 'BANK_TRANSFER',
-        instructions: 'Chuyển khoản Vietcombank — STK 0123456789 HOME MART CO., LTD — nội dung: ' + order.orderNumber,
+        instructions: `${bankInfo} — nội dung: ${order.orderNumber}`,
         providerRef: `BT-${order.orderNumber}`,
       };
     }
@@ -209,7 +211,7 @@ export class PaymentsService {
 
   /** Cron/manual: expire unpaid orders after timeout and release stock. */
   async expirePendingOrders() {
-    const timeoutMin = Number(process.env.ORDER_PAYMENT_TIMEOUT_MINUTES ?? 30);
+    const timeoutMin = getEnv().ORDER_PAYMENT_TIMEOUT_MINUTES;
     const cutoff = new Date(Date.now() - timeoutMin * 60e3);
     const stale = await this.prisma.order.findMany({
       where: { status: 'PENDING', createdAt: { lt: cutoff } },

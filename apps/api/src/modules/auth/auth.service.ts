@@ -11,6 +11,7 @@ import { UserStatus, Role } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { createHash } from 'crypto';
 import { PrismaService } from '../../infra/prisma.service';
+import { getEnv } from '../../config/env';
 import { randomToken } from '../../common/utils/helpers';
 
 const BCRYPT_ROUNDS = 12;
@@ -86,7 +87,7 @@ export class AuthService {
   async refresh(rawRefreshToken: string) {
     let payload: { sub: string; type: string };
     try {
-      payload = await this.jwt.verifyAsync(rawRefreshToken, { secret: process.env.JWT_REFRESH_SECRET });
+      payload = await this.jwt.verifyAsync(rawRefreshToken, { secret: getEnv().JWT_REFRESH_SECRET });
     } catch {
       throw new UnauthorizedException('Invalid refresh token');
     }
@@ -219,14 +220,14 @@ export class AuthService {
     role: Role,
     meta?: { ip?: string; userAgent?: string },
   ) {
-    const envTtlDays = Number(process.env.JWT_REFRESH_TTL_DAYS ?? 7);
+    const envTtlDays = getEnv().JWT_REFRESH_TTL_DAYS;
     const accessToken = await this.jwt.signAsync(
       { sub: userId, email, role, type: 'access' },
-      { secret: process.env.JWT_ACCESS_SECRET, expiresIn: process.env.JWT_ACCESS_TTL ?? '15m' },
+      { secret: getEnv().JWT_ACCESS_SECRET, expiresIn: getEnv().JWT_ACCESS_TTL ?? '15m' },
     );
     const refreshToken = await this.jwt.signAsync(
       { sub: userId, email, role, type: 'refresh', jti: randomToken(16) },
-      { secret: process.env.JWT_REFRESH_SECRET, expiresIn: `${envTtlDays}d` },
+      { secret: getEnv().JWT_REFRESH_SECRET, expiresIn: `${envTtlDays}d` },
     );
     await this.prisma.refreshToken.create({
       data: {

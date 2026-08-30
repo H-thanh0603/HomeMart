@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { Public, CurrentUser, RequestUser } from '../../common/decorators/auth.decorators';
+import { getEnv } from '../../config/env';
 import {
   AuthService,
 } from './auth.service';
@@ -23,16 +24,22 @@ import {
  */
 const REFRESH_COOKIE = 'hm_rt';
 
+// Per-endpoint auth throttles scale with AUTH_THROTTLE_MULTIPLIER so load
+// tests / flash sales can raise them without touching code.
+const AUTH_THROTTLE = (limit: number) => ({
+  default: { limit: limit * getEnv().AUTH_THROTTLE_MULTIPLIER, ttl: 60_000 },
+});
+
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   private setRefreshCookie(res: Response, refreshToken: string) {
-    const ttlDays = Number(process.env.JWT_REFRESH_TTL_DAYS ?? 7);
+    const ttlDays = getEnv().JWT_REFRESH_TTL_DAYS;
     res.cookie(REFRESH_COOKIE, refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: getEnv().NODE_ENV === 'production',
       sameSite: 'lax',
       path: '/api/v1/auth', // only sent to auth endpoints
       maxAge: ttlDays * 86400e3,
@@ -42,14 +49,14 @@ export class AuthController {
   private clearRefreshCookie(res: Response) {
     res.clearCookie(REFRESH_COOKIE, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: getEnv().NODE_ENV === 'production',
       sameSite: 'lax',
       path: '/api/v1/auth',
     });
   }
 
   @Public()
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Throttle(AUTH_THROTTLE(10))
   @Post('register')
   @ApiOperation({ summary: 'Đăng ký tài khoản' })
   async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) res: Response) {
@@ -59,7 +66,7 @@ export class AuthController {
   }
 
   @Public()
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Throttle(AUTH_THROTTLE(10))
   @Post('login')
   @ApiOperation({ summary: 'Đăng nhập' })
   async login(
@@ -77,6 +84,7 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle(AUTH_THROTTLE(30)) // rotation happens on every page load — generous but bounded
   @Post('refresh')
   async refresh(
     @Body() dto: RefreshTokenDto,
@@ -99,13 +107,14 @@ export class AuthController {
   }
 
   @Public()
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Throttle(AUTH_THROTTLE(5))
   @Post('forgot-password')
   forgotPassword(@Body() dto: ForgotPasswordDto) {
     return this.authService.forgotPassword(dto.email);
   }
 
   @Public()
+  @Throttle(AUTH_THROTTLE(10)) // token-bearing password change — prevent brute force on tokens
   @Post('reset-password')
   resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto.token, dto.newPassword);
@@ -118,6 +127,7 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle(AUTH_THROTTLE(20))
   @Get('verify-email')
   verifyEmail(@Query('token') token: string) {
     return this.authService.verifyEmail(token);

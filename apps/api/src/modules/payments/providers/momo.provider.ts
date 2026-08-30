@@ -13,7 +13,9 @@ export class MomoProvider implements PaymentProvider {
     const providerRef = `${input.orderNumber}-${Date.now()}`;
     const orderInfo = input.orderInfo;
     const redirectUrl = env.MOMO_RETURN_URL;
-    const ipnUrl = `${env.WEB_URL ?? 'http://localhost:3000'}/api/v1/payments/webhook/momo`;
+    // IPN must reach THIS api's webhook, not the frontend origin — MoMo
+    // POSTs the payment result server-to-server to confirm the order.
+    const ipnUrl = `${env.API_PUBLIC_URL}/api/v1/payments/webhook/momo`;
     const requestType = 'captureWallet';
     const rawSignature = `accessKey=${env.MOMO_ACCESS_KEY}&amount=${input.amountVnd}&extraData=&ipnUrl=${ipnUrl}&orderId=${providerRef}&orderInfo=${orderInfo}&partnerCode=${env.MOMO_PARTNER_CODE}&redirectUrl=${redirectUrl}&requestId=${providerRef}&requestType=${requestType}`;
     const signature = createHmac('sha256', env.MOMO_SECRET_KEY ?? '').update(rawSignature).digest('hex');
@@ -63,7 +65,9 @@ export class MomoProvider implements PaymentProvider {
 
     return {
       providerTxnId: String(p.transId ?? p.requestId),
-      success: p.resultCode === '0',
+      // MoMo IPN sends resultCode as a number (0 = success) — never compare
+      // it to the string '0' directly or real successes are treated as failures.
+      success: String(p.resultCode) === '0',
       amountVnd: Number(p.amount ?? 0),
       providerRef: String(p.orderId ?? ''),
       raw: payload,
@@ -88,7 +92,9 @@ export class MomoProvider implements PaymentProvider {
       description: `Refund ${orderNumber}`,
       signature,
     };
-    const res = await fetch('https://test-payment.momo.vn/v2/gateway/api/refund', {
+    // Refund endpoint derives from the configured API URL (sandbox vs production)
+    const refundUrl = env.MOMO_API_URL.replace(/\/create$/, '/refund');
+    const res = await fetch(refundUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),

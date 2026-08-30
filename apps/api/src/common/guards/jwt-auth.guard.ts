@@ -3,6 +3,7 @@ import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { Role } from '@prisma/client';
 import { IS_PUBLIC_KEY, OPTIONAL_AUTH_KEY } from '../decorators/auth.decorators';
+import { getEnv } from '../../config/env';
 
 export interface RequestUser {
   id: string;
@@ -46,7 +47,7 @@ export class JwtAuthGuard implements CanActivate {
 
     try {
       const payload = await this.jwt.verifyAsync<JwtPayload>(header.slice(7), {
-        secret: process.env.JWT_ACCESS_SECRET,
+        secret: getEnv().JWT_ACCESS_SECRET,
       });
       if (payload.type !== 'access') throw new Error();
       request.user = { id: payload.sub, email: payload.email, role: payload.role };

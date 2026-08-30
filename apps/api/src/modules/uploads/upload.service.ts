@@ -1,10 +1,51 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { extname } from 'path';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { getEnv } from '../../config/env';
+
+export interface UploadResult {
+  url: string;
+  key: string;
+  size: number;
+  mimetype: string;
+}
+
+/**
+ * Allowed image types. SVG is deliberately excluded: it can embed scripts and
+ * uploads are served same-origin, so accepting it enables stored XSS.
+ */
+const ALLOWED_MIME_EXTS: Record<string, string[]> = {
+  'image/jpeg': ['.jpg', '.jpeg'],
+  'image/png': ['.png'],
+  'image/webp': ['.webp'],
+  'image/gif': ['.gif'],
+};
+const CANONICAL_EXT: Record<string, string> = {
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/webp': '.webp',
+  'image/gif': '.gif',
+};
+
+/** Detect the real image type from magic bytes — the client mimetype is untrusted. */
+export function sniffImageMime(buf: Buffer): string | null {
+  if (buf.length < 12) return null;
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return 'image/png';
+  if (buf.subarray(0, 4).toString('latin1') === 'GIF8') return 'image/gif';
+  if (buf.subarray(0, 4).toString('latin1') === 'RIFF' && buf.subarray(8, 12).toString('latin1') === 'WEBP') return 'image/webp';
+  return null;
+}
+
+/** Safe storage extension: must match the declared (and sniffed) mimetype. */
+function safeExt(mimetype: string, originalname: string): string {
+  const clientExt = path.extname(originalname).toLowerCase();
+  if (clientExt && ALLOWED_MIME_EXTS[mimetype]?.includes(clientExt)) return clientExt;
+  return CANONICAL_EXT[mimetype];
+}
 
 export interface UploadResult {
   url: string;
@@ -38,16 +79,17 @@ export class UploadService {
   private s3?: S3Client;
 
   constructor() {
-    this.driver = (process.env.STORAGE_DRIVER as 'local' | 's3') ?? 'local';
-    this.uploadDir = process.env.UPLOAD_DIR ?? './uploads';
+    const env = getEnv();
+    this.driver = env.STORAGE_DRIVER;
+    this.uploadDir = env.UPLOAD_DIR;
 
     if (this.driver === 's3') {
       this.s3 = new S3Client({
-        region: process.env.S3_REGION ?? 'auto',
-        endpoint: process.env.S3_ENDPOINT,
+        region: env.S3_REGION ?? 'auto',
+        endpoint: env.S3_ENDPOINT,
         credentials: {
-          accessKeyId: process.env.S3_ACCESS_KEY ?? '',
-          secretAccessKey: process.env.S3_SECRET_KEY ?? '',
+          accessKeyId: env.S3_ACCESS_KEY ?? '',
+          secretAccessKey: env.S3_SECRET_KEY ?? '',
         },
       });
       this.logger.log('S3 storage driver initialized');
@@ -62,17 +104,23 @@ export class UploadService {
   async upload(file: Express.Multer.File, folder = 'products'): Promise<UploadResult> {
     if (!file) throw new BadRequestException('No file provided');
 
-    const maxMb = Number(process.env.MAX_UPLOAD_MB ?? 5);
+    const maxMb = getEnv().MAX_UPLOAD_MB;
     if (file.size > maxMb * 1024 * 1024) {
       throw new BadRequestException(`File exceeds maximum size of ${maxMb}MB`);
     }
 
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml'];
-    if (!allowedTypes.includes(file.mimetype)) {
-      throw new BadRequestException('Only JPEG, PNG, WebP, GIF, and SVG are allowed');
+    if (!ALLOWED_MIME_EXTS[file.mimetype]) {
+      throw new BadRequestException('Only JPEG, PNG, WebP, and GIF are allowed');
     }
 
-    const ext = extname(file.originalname).toLowerCase() || '.jpg';
+    // Content sniffing: the declared mimetype comes from the client and can be
+    // forged. The real bytes must agree, or the upload is rejected.
+    const sniffed = sniffImageMime(file.buffer ?? Buffer.alloc(0));
+    if (sniffed !== file.mimetype) {
+      throw new BadRequestException('File content does not match its declared image type');
+    }
+
+    const ext = safeExt(file.mimetype, file.originalname);
     const key = `${folder}/${randomUUID()}${ext}`;
 
     if (this.driver === 's3') {
@@ -89,9 +137,12 @@ export class UploadService {
       throw new BadRequestException('Presigned URLs only available with S3 driver');
     }
 
-    const ext = extname(filename).toLowerCase() || '.jpg';
+    if (!ALLOWED_MIME_EXTS[mimetype]) {
+      throw new BadRequestException('Only JPEG, PNG, WebP, and GIF are allowed');
+    }
+    const ext = safeExt(mimetype, filename);
     const key = `${folder}/${randomUUID()}${ext}`;
-    const bucket = process.env.S3_BUCKET ?? '';
+    const bucket = getEnv().S3_BUCKET ?? '';
 
     const command = new PutObjectCommand({
       Bucket: bucket,
@@ -108,20 +159,18 @@ export class UploadService {
    * Get the full URL for a stored key.
    */
   getUrl(key: string): string {
+    const env = getEnv();
     if (this.driver === 's3') {
-      const publicUrl = process.env.S3_PUBLIC_URL ?? '';
-      const bucket = process.env.S3_BUCKET ?? '';
-      if (publicUrl) return `${publicUrl}/${key}`;
-      return `https://${bucket}.s3.${process.env.S3_REGION ?? 'auto'}.amazonaws.com/${key}`;
+      if (env.S3_PUBLIC_URL) return `${env.S3_PUBLIC_URL}/${key}`;
+      return `https://${env.S3_BUCKET ?? ''}.s3.${env.S3_REGION ?? 'auto'}.amazonaws.com/${key}`;
     }
-    const baseUrl = process.env.UPLOAD_BASE_URL ?? '/uploads';
-    return `${baseUrl}/${key}`;
+    return `${env.UPLOAD_BASE_URL}/${key}`;
   }
 
   // ─── Private ───
 
   private async uploadS3(file: Express.Multer.File, key: string): Promise<UploadResult> {
-    const bucket = process.env.S3_BUCKET ?? '';
+    const bucket = getEnv().S3_BUCKET ?? '';
     if (!bucket) throw new BadRequestException('S3_BUCKET not configured');
 
     await this.s3!.send(

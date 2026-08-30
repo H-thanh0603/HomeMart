@@ -93,7 +93,7 @@ export class VnpayProvider implements PaymentProvider {
       vnp_IpAddr: '127.0.0.1',
     };
     const signed = this.signParams(params, env.VNPAY_HASH_SECRET ?? '');
-    const res = await fetch('https://sandbox.vnpayment.vn/merchant_webapi/api/transaction', {
+    const res = await fetch(env.VNPAY_API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(signed),

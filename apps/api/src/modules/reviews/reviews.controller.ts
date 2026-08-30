@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsInt, IsOptional, IsString, IsUrl, Max, MaxLength, Min } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsIn, IsInt, IsOptional, IsString, IsUrl, Max, MaxLength, Min } from 'class-validator';
 import { Role } from '@prisma/client';
 import { CurrentUser, Public, Roles } from '../../common/decorators/auth.decorators';
 import { clampLimit, clampPage } from '../../common/utils/helpers';
@@ -41,6 +41,10 @@ export class ReviewsController {
   }
 }
 
+export class ModerateReviewDto {
+  @IsIn(['APPROVED', 'HIDDEN']) status!: 'APPROVED' | 'HIDDEN';
+}
+
 @ApiTags('admin/reviews')
 @ApiBearerAuth()
 @Roles(Role.STAFF)
@@ -49,7 +53,7 @@ export class AdminReviewsController {
   constructor(private readonly reviewsService: ReviewsService) {}
 
   @Patch(':id/moderate') @Audit('review.moderate', 'Review')
-  moderate(@Param('id') id: string, @Body() dto: { status: 'APPROVED' | 'HIDDEN' }) {
+  moderate(@Param('id') id: string, @Body() dto: ModerateReviewDto) {
     return this.reviewsService.moderate(id, dto.status);
   }
 }

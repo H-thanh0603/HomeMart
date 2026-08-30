@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
@@ -23,6 +23,7 @@ export class ProductQueryDto {
   @IsOptional() @Type(() => Number) @IsNumber() rating?: number;
   @IsOptional() @Type(() => Boolean) @IsBoolean() inStock?: boolean;
   @IsOptional() @Type(() => Boolean) @IsBoolean() onSale?: boolean;
+  @IsOptional() @IsString() cursor?: string;
 }
 
 @ApiTags('products')
@@ -32,9 +33,9 @@ export class ProductsController {
 
   @Public()
   @Get('products')
-  @ApiOperation({ summary: 'Danh sách sản phẩm (filter + sort + phân trang)' })
+  @ApiOperation({ summary: 'Danh sách sản phẩm (filter + sort + phân trang, Redis-cached 30s)' })
   async list(@Query() query: ProductQueryDto) {
-    const result = await this.productsService.list(query as ProductQuery);
+    const result = await this.productsService.listCached(query as ProductQuery);
     return { items: result.items, ...buildPagedMeta(result.total, result.page, result.limit) };
   }
 
@@ -51,6 +52,10 @@ export class ProductsController {
   }
 }
 
+export class AdminProductQueryDto extends ProductQueryDto {
+  @IsOptional() @IsIn(Object.values(ProductStatus)) status?: ProductStatus;
+}
+
 @ApiTags('admin/products')
 @ApiBearerAuth()
 @Roles(Role.STAFF)
@@ -60,7 +65,7 @@ export class AdminProductsController {
 
   @Get()
   @ApiOperation({ summary: '[Admin] Danh sách sản phẩm (kèm DRAFT/ARCHIVED)' })
-  async list(@Query() query: ProductQueryDto & { status?: ProductStatus }) {
+  async list(@Query() query: AdminProductQueryDto) {
     const result = await this.productsService.list({ ...query, status: query.status ?? ProductStatus.PUBLISHED });
     return { items: result.items, ...buildPagedMeta(result.total, result.page, result.limit) };
   }
@@ -95,10 +100,20 @@ export class AdminProductsController {
     return this.productsService.bulkAction(dto.action, dto.ids);
   }
 
-  @Post('import') @Roles(Role.MANAGER) @Audit('product.import', 'Product') @UseInterceptors(FileInterceptor('file'))
+  @Post('import') @Roles(Role.MANAGER) @Audit('product.import', 'Product')
+  @UseInterceptors(FileInterceptor('file', {
+    limits: { fileSize: 10 * 1024 * 1024 }, // unbounded uploads let any STAFF OOM the API
+    fileFilter: (_req, file, cb) => {
+      if (file.originalname.toLowerCase().endsWith('.csv') || file.mimetype === 'text/csv') {
+        cb(null, true);
+      } else {
+        cb(new BadRequestException('Only .csv files are accepted'), false);
+      }
+    },
+  }))
   @ApiOperation({ summary: '[Admin] Import CSV 100 SP — header: sku,name,price,categorySlug,stock,weightGrams,description' })
-  async importCsv(@UploadedFile() file: Express.Multer.File) {
-    if (!file?.buffer) throw new Error('Thiếu file CSV (field name=file)');
+  async importCsv(@UploadedFile() file?: Express.Multer.File) {
+    if (!file?.buffer) throw new BadRequestException('Thiếu file CSV (field name=file, tối đa 10MB)');
     const csv = file.buffer.toString('utf-8');
     return this.productsService.importCsv(csv);
   }

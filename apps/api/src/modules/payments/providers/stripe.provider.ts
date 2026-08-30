@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PaymentProvider, CreatePaymentInput, CreatePaymentResult } from '../payment-provider.interface';
+import { getEnv } from '../../../config/env';
 
 /**
  * Stripe integration (PaymentIntent-based).
@@ -11,7 +12,7 @@ export class StripeProvider implements PaymentProvider {
   readonly method = 'STRIPE' as const;
 
   async createPayment(input: CreatePaymentInput): Promise<CreatePaymentResult> {
-    const key = process.env.STRIPE_SECRET_KEY;
+    const key = getEnv().STRIPE_SECRET_KEY;
     const providerRef = `stripe_${input.orderNumber}_${Date.now()}`;
 
     if (!key) {
@@ -63,7 +64,7 @@ export class StripeProvider implements PaymentProvider {
   }
 
   async refund(providerRef: string) {
-    const key = process.env.STRIPE_SECRET_KEY;
+    const key = getEnv().STRIPE_SECRET_KEY;
     if (!key) throw new Error('Stripe refund requires STRIPE_SECRET_KEY');
     const body = new URLSearchParams({ payment_intent: providerRef });
     const res = await fetch('https://api.stripe.com/v1/refunds', {

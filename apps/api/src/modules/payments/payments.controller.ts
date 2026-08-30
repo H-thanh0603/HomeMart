@@ -4,6 +4,7 @@ import { Request } from 'express';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { PaymentMethodType } from '@prisma/client';
 import { CurrentUser, Public } from '../../common/decorators/auth.decorators';
+import { getEnv } from '../../config/env';
 import { PaymentsService } from './payments.service';
 import { VnpayProvider } from './providers/vnpay.provider';
 import { MomoProvider } from './providers/momo.provider';
@@ -61,7 +62,7 @@ export class PaymentsController {
   }
 
   private verifyStripeSignature(header: string | undefined, rawBody: string) {
-    const secret = process.env.STRIPE_WEBHOOK_SECRET;
+    const secret = getEnv().STRIPE_WEBHOOK_SECRET;
     if (!secret || !header) throw new BadGatewayException('Missing webhook secret or signature');
     const parts = Object.fromEntries(header.split(',').map((kv) => kv.split('=') as [string, string]));
     if (!parts.t || !parts.v1) throw new BadGatewayException('Malformed signature');
