@@ -1,5 +1,7 @@
-import { Body, Controller, ForbiddenException, Get, Param, Patch, Post, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, ForbiddenException, Get, Param, Patch, Post, Query, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { memoryStorage } from 'multer';
 import { Type } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 import { OrderStatus, Role } from '@prisma/client';
@@ -24,6 +26,10 @@ export class UpdateOrderStatusDto {
 
 export class ConfirmCodDto {
   @IsOptional() @IsString() note?: string;
+}
+
+export class ReconcileReportDto {
+  @IsIn(['VNPAY', 'MOMO']) provider!: 'VNPAY' | 'MOMO';
 }
 
 @ApiTags('admin/orders')
@@ -98,5 +104,30 @@ export class AdminOrdersController {
   @ApiOperation({ summary: '[Admin] Đối soát payment vs order (chạy hằng ngày)' })
   reconcile() {
     return this.reconcileService.run();
+  }
+
+  /** Đối soát file CSV export từ merchant portal VNPay/MoMo (issue 1.2). */
+  @Post('ops/reconcile-report')
+  @Roles(Role.MANAGER)
+  @Audit('payment.reconcile_report', 'Payment')
+  @ApiOperation({ summary: '[Admin] Upload CSV báo cáo VNPay/MoMo → đối soát với DB' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        provider: { type: 'string', enum: ['VNPAY', 'MOMO'] },
+        file: { type: 'string', format: 'binary' },
+      },
+      required: ['provider', 'file'],
+    },
+  })
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }))
+  async reconcileReport(
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Body() dto: ReconcileReportDto,
+  ) {
+    if (!file?.buffer?.length) throw new ForbiddenException('No file provided');
+    return this.reconcileService.reconcileWithGatewayReport(dto.provider, file.buffer.toString('utf8'));
   }
 }
