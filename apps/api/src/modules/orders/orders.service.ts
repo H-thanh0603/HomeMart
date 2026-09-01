@@ -48,6 +48,19 @@ export interface CheckoutDto {
   note?: string;
 }
 
+/** Priced line — price/name/sku snapshot resolved fresh from the DB (BR-1). */
+export interface CheckoutLine {
+  productId: string;
+  variantId: string | null;
+  quantity: number;
+  name: string;
+  sku: string;
+  image: string | null;
+  variantAttributes: Record<string, string> | null;
+  unitPrice: number;
+  lineTotal: number;
+}
+
 @Injectable()
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
@@ -154,11 +167,8 @@ export class OrdersService {
         const order = await this.prisma.$transaction(
           async (tx) => {
             // Re-price INSIDE the transaction (price could have changed since preview)
-            const txLines = [];
-            for (const line of lines) {
-              const fresh = await this.fetchLine(tx, line.productId, line.variantId, line.quantity);
-              txLines.push(fresh);
-            }
+            // — one batched read instead of 3 queries per line while holding locks
+            const txLines = await this.fetchLines(tx, lines.map(toCheckoutInput));
             const txSubtotal = txLines.reduce((s, l) => s + l.lineTotal, 0);
             if (txSubtotal !== subtotal) {
               throw new BusinessRuleError('Product prices have changed, please review your cart', 'PRICE_CHANGED');
@@ -172,7 +182,6 @@ export class OrdersService {
             if (voucherId && dto.voucherCode) {
               const consumed = await this.promotions.consumeAtomically(tx, voucherId, userId);
               if (!consumed) throw new BusinessRuleError('Voucher is no longer available', 'VOUCHER_LIMIT_REACHED');
-              await tx.voucherUsage.create({ data: { voucherId, userId, orderId: 'PENDING' } }); // updated below
               appliedVoucherCode = dto.voucherCode.toUpperCase();
             }
 
@@ -222,10 +231,7 @@ export class OrdersService {
             });
 
             if (appliedVoucherCode && voucherId) {
-              await tx.voucherUsage.updateMany({
-                where: { userId, orderId: 'PENDING', voucherId },
-                data: { orderId: created.id },
-              });
+              await tx.voucherUsage.create({ data: { voucherId, userId, orderId: created.id } });
             }
 
             // Claim the idempotency key in the same tx. A concurrent duplicate
@@ -440,53 +446,80 @@ export class OrdersService {
     }
     if (inputs.length > 50) throw new BadRequestException('Too many items');
 
-    const lines = [];
-    for (const input of inputs) {
-      lines.push(await this.fetchLine(this.prisma, input.productId, input.variantId, input.quantity));
-    }
-    return lines;
+    return this.fetchLines(this.prisma, inputs);
   }
 
-  /** Always fetch price/stock fresh from DB — never trust client (BR-1). */
-  private async fetchLine(client: Tx | PrismaService, productId: string, variantId: string | null | undefined, quantity: number) {
-    if (quantity < 1 || quantity > 99) throw new BadRequestException('Invalid quantity');
-    const product = await client.product.findFirst({
-      where: { id: productId, deletedAt: null, status: 'PUBLISHED' },
-      include: { images: { where: { isPrimary: true }, take: 1 } },
-    });
-    if (!product) throw new NotFoundException(`Product ${productId} not found`);
-
-    let unitPrice = product.price;
-    let sku = product.sku;
-    const name = product.name;
-    let image = product.images[0]?.url ?? null;
-    let variantAttributes: Record<string, string> | null = null;
-
-    if (variantId) {
-      const variant = await client.productVariant.findFirst({
-        where: { id: variantId, productId, deletedAt: null },
-      });
-      if (!variant) throw new NotFoundException(`Variant ${variantId} not found`);
-      unitPrice = variant.price;
-      sku = variant.sku;
-      variantAttributes = variant.attributes as Record<string, string>;
-      image = variant.imageUrl ?? image;
+  /**
+   * Always fetch price/stock fresh from DB — never trust client (BR-1).
+   * Batched: 3 queries total regardless of item count (flash-sale hot path).
+   */
+  private async fetchLines(client: Tx | PrismaService, inputs: CheckoutItemInput[]): Promise<CheckoutLine[]> {
+    for (const input of inputs) {
+      if (input.quantity < 1 || input.quantity > 99) throw new BadRequestException('Invalid quantity');
     }
 
-    const inv = await client.inventory.findFirst({
-      where: variantId ? { variantId } : { productId, variantId: null },
-    });
-    const available = inv?.availableStock ?? 0;
-    if (available < quantity) {
-      throw new BusinessRuleError(`"${name}" only has ${available} left in stock`, 'OUT_OF_STOCK');
-    }
+    const productIds = [...new Set(inputs.map((i) => i.productId))];
+    const variantIds = [...new Set(inputs.map((i) => i.variantId).filter((v): v is string => Boolean(v)))];
+    const [products, variants, inventories] = await Promise.all([
+      client.product.findMany({
+        where: { id: { in: productIds }, deletedAt: null, status: 'PUBLISHED' },
+        include: { images: { where: { isPrimary: true }, take: 1 } },
+      }),
+      variantIds.length
+        ? client.productVariant.findMany({ where: { id: { in: variantIds }, deletedAt: null } })
+        : Promise.resolve([]),
+      client.inventory.findMany({
+        where: {
+          OR: inputs.map((i) => (i.variantId ? { variantId: i.variantId } : { productId: i.productId, variantId: null })),
+        },
+      }),
+    ]);
 
-    return {
-      productId, variantId: variantId ?? null, quantity,
-      name, sku, image, variantAttributes,
-      unitPrice,
-      lineTotal: unitPrice * quantity,
-    };
+    const productById = new Map(products.map((p) => [p.id, p]));
+    const variantById = new Map(variants.map((v) => [v.id, v]));
+    const invByVariant = new Map(inventories.filter((i) => i.variantId).map((i) => [i.variantId, i]));
+    const invByProduct = new Map(
+      inventories.filter((i) => !i.variantId).map((i) => [i.productId, i]),
+    );
+
+    return inputs.map((input) => {
+      const product = productById.get(input.productId);
+      if (!product) throw new NotFoundException(`Product ${input.productId} not found`);
+
+      let unitPrice = product.price;
+      let sku = product.sku;
+      let image = product.images[0]?.url ?? null;
+      let variantAttributes: Record<string, string> | null = null;
+
+      if (input.variantId) {
+        const variant = variantById.get(input.variantId);
+        if (!variant || variant.productId !== input.productId) {
+          throw new NotFoundException(`Variant ${input.variantId} not found`);
+        }
+        unitPrice = variant.price;
+        sku = variant.sku;
+        variantAttributes = variant.attributes as Record<string, string>;
+        image = variant.imageUrl ?? image;
+      }
+
+      const inv = input.variantId ? invByVariant.get(input.variantId) : invByProduct.get(input.productId);
+      const available = inv?.availableStock ?? 0;
+      if (available < input.quantity) {
+        throw new BusinessRuleError(`"${product.name}" only has ${available} left in stock`, 'OUT_OF_STOCK');
+      }
+
+      return {
+        productId: input.productId,
+        variantId: input.variantId ?? null,
+        quantity: input.quantity,
+        name: product.name,
+        sku,
+        image,
+        variantAttributes,
+        unitPrice,
+        lineTotal: unitPrice * input.quantity,
+      };
+    });
   }
 
   private async totalWeight(lines: { productId: string; quantity: number }[]) {
@@ -501,6 +534,11 @@ export class OrdersService {
 
 function toReserveItem(l: { productId: string; variantId: string | null; quantity: number }) {
   return { productId: l.productId, variantId: l.variantId, quantity: l.quantity };
+}
+
+/** Re-run fetchLines on already-priced lines (in-tx re-price). */
+function toCheckoutInput(l: CheckoutLine): CheckoutItemInput {
+  return { productId: l.productId, variantId: l.variantId ?? undefined, quantity: l.quantity };
 }
 
 class ConflictOnRetry extends Error {}
