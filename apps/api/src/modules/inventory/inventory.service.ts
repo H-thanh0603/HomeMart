@@ -21,46 +21,72 @@ export class InventoryService {
 
   /**
    * Atomically reserve stock for order checkout.
-   * Uses SELECT ... FOR UPDATE row locking inside a transaction to prevent overselling.
-   * Rows are locked in a deterministic order (sorted by inventory id) — two
-   * concurrent orders with overlapping items can no longer deadlock.
-   * Throws (rolling back the whole tx) when any item is insufficient.
+   * Oversell is impossible: rows are locked with SELECT ... FOR UPDATE and
+   * stock is re-validated under the lock before any decrement.
+   *
+   * Flash-sale hot path — deliberately set-based (constant query count for
+   * any number of items): one findMany to resolve rows, one FOR UPDATE over
+   * all rows in deterministic id order (deadlock avoidance), one batched
+   * conditional UPDATE, one createMany for the ledger. Quantities for the
+   * same inventory row are aggregated first so the UPDATE ... FROM join key
+   * stays unique (Postgres picks an arbitrary match on duplicates).
+   * Any insufficiency throws, rolling back the whole transaction.
    */
   async reserve(tx: Tx, items: ReserveItem[], orderId: string) {
-    const invIds = new Map<string, ReserveItem>();
+    if (!items.length) return;
+
+    // 1. Resolve inventory rows for every item in one query
+    const invs = await tx.inventory.findMany({
+      where: {
+        OR: items.map((i) => (i.variantId ? { variantId: i.variantId } : { productId: i.productId, variantId: null })),
+      },
+    });
+    const byItemKey = new Map(invs.map((inv) => [inv.variantId ?? inv.productId, inv]));
+    const qtyByInvId = new Map<string, { qty: number; item: ReserveItem }>();
     for (const item of items) {
-      const invId = await this.findInventoryId(tx, item);
-      invIds.set(invId, item);
+      const inv = byItemKey.get(item.variantId ?? item.productId);
+      if (!inv) throw new NotFoundException(`Inventory not found for product ${item.productId}`);
+      const agg = qtyByInvId.get(inv.id);
+      if (agg) agg.qty += item.quantity;
+      else qtyByInvId.set(inv.id, { qty: item.quantity, item });
     }
-    for (const invId of [...invIds.keys()].sort()) {
-      const item = invIds.get(invId)!;
-      // Lock the row
-      const rows: { id: string; availableStock: number }[] = await tx.$queryRaw`
-        SELECT id, "availableStock" FROM inventories WHERE id = ${invId} FOR UPDATE`;
-      const locked = rows[0];
-      if (!locked) throw new NotFoundException('Inventory not found');
-      if (locked.availableStock < item.quantity) {
-        throw new BusinessRuleError(
-          `Insufficient stock: only ${locked.availableStock} left`,
-          'OUT_OF_STOCK',
-        );
+
+    const ids = [...qtyByInvId.keys()].sort();
+
+    // 2. Lock all rows in deterministic order
+    const locked: { id: string; availableStock: number }[] = await tx.$queryRaw`
+      SELECT id, "availableStock" FROM inventories WHERE id IN (${Prisma.join(ids)}) ORDER BY id FOR UPDATE`;
+    const lockedById = new Map(locked.map((r) => [r.id, r]));
+
+    // 3. Validate under the lock — names the offending product
+    for (const [invId, { qty }] of qtyByInvId) {
+      const row = lockedById.get(invId);
+      if (!row) throw new NotFoundException('Inventory not found');
+      if (row.availableStock < qty) {
+        throw new BusinessRuleError(`Insufficient stock: only ${row.availableStock} left`, 'OUT_OF_STOCK');
       }
-      await tx.inventory.update({
-        where: { id: invId },
-        data: {
-          availableStock: { decrement: item.quantity },
-          reservedStock: { increment: item.quantity },
-        },
-      });
-      await tx.inventoryTransaction.create({
-        data: {
-          inventoryId: invId,
-          type: InventoryTransactionType.RESERVE,
-          quantity: -item.quantity,
-          reference: orderId,
-        },
-      });
     }
+
+    // 4. Apply every decrement in one statement (double-guarded with >=)
+    const values = Prisma.join(
+      [...qtyByInvId.entries()].map(([id, { qty }]) => Prisma.sql`(${id}::text, ${qty}::int)`),
+    );
+    await tx.$executeRaw`
+      UPDATE inventories AS i
+      SET "availableStock" = i."availableStock" - v.qty,
+          "reservedStock" = i."reservedStock" + v.qty
+      FROM (VALUES ${values}) AS v(id, qty)
+      WHERE i.id = v.id AND i."availableStock" >= v.qty`;
+
+    // 5. Ledger rows in one statement
+    await tx.inventoryTransaction.createMany({
+      data: [...qtyByInvId.entries()].map(([invId, { qty }]) => ({
+        inventoryId: invId,
+        type: InventoryTransactionType.RESERVE,
+        quantity: -qty,
+        reference: orderId,
+      })),
+    });
   }
 
   /** Payment success → reserved becomes sold. */
