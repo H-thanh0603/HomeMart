@@ -68,8 +68,13 @@ function SearchBar() {
 }
 
 function HeaderActions() {
-  const user = useAuthStore((s) => s.user);
+  // ponytail: store persist localStorage — SSR render user=null/count=0, client rehydrate trước hydration → mismatch. Gate bằng mounted; account pages đã gate bằng `hydrated`, đây chỗ duy nhất còn sót.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const authUser = useAuthStore((s) => s.user);
   const cartCount = useCartStore((s) => s.count);
+  const user = mounted ? authUser : null;
+  const count = mounted ? cartCount : 0;
   const logout = useLogout();
 
   const onLogout = () => {
@@ -91,14 +96,14 @@ function HeaderActions() {
 
       <Link
         href="/cart"
-        aria-label={`Giỏ hàng${cartCount > 0 ? ` (${cartCount} sản phẩm)` : ''}`}
+        aria-label={`Giỏ hàng${count > 0 ? ` (${count} sản phẩm)` : ''}`}
         className="group relative flex h-10 items-center gap-2 rounded-xl px-2.5 text-slate-700 transition-colors hover:bg-slate-100 hover:text-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
       >
         <div className="relative">
           <ShoppingCart className="h-5 w-5 transition-transform duration-200 group-hover:scale-110" />
-          {cartCount > 0 && (
+          {count > 0 && (
             <span className="absolute -right-2 -top-1.5 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-gradient-to-r from-accent-500 to-amber-500 px-1 text-[11px] font-bold text-white shadow-sm shadow-accent-500/40 animate-pulse-subtle">
-              {cartCount > 99 ? '99+' : cartCount}
+              {count > 99 ? '99+' : count}
             </span>
           )}
         </div>
@@ -346,7 +351,11 @@ const BOTTOM_NAV_ITEMS = [
 
 export function MobileBottomNav() {
   const pathname = usePathname();
-  const cartCount = useCartStore((s) => s.count);
+  // ponytail: same mismatch — SSR count=0, client có giá trị persist. Gate bằng mounted.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const persistedCount = useCartStore((s) => s.count);
+  const cartCount = mounted ? persistedCount : 0;
 
   return (
     <nav
