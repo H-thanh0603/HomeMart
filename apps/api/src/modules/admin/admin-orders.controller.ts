@@ -4,7 +4,7 @@ import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nes
 import { memoryStorage } from 'multer';
 import { Type } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
-import { OrderStatus, Role } from '@prisma/client';
+import { OrderStatus, Role } from 'src/generated/prisma/client';
 import { Roles } from '../../common/decorators/auth.decorators';
 import { CurrentUser } from '../../common/decorators/auth.decorators';
 import { Audit } from './audit.decorator';

@@ -2,7 +2,7 @@ import { BadRequestException, Controller, Get, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsInt, IsOptional, IsString, Min } from 'class-validator';
-import { OrderStatus, Role } from '@prisma/client';
+import { OrderStatus, Role } from 'src/generated/prisma/client';
 import { Roles } from '../../common/decorators/auth.decorators';
 import { clampLimit, clampPage } from '../../common/utils/helpers';
 import { AdminService } from './admin.service';

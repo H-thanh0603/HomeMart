@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { JwtModule } from '@nestjs/jwt';
+import type { SignOptions } from 'jsonwebtoken';
 import { getEnv } from '../../config/env';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
@@ -11,7 +12,7 @@ import { AuthService } from './auth.service';
     JwtModule.registerAsync({
       useFactory: () => ({
         secret: getEnv().JWT_ACCESS_SECRET,
-        signOptions: { expiresIn: getEnv().JWT_ACCESS_TTL },
+        signOptions: { expiresIn: getEnv().JWT_ACCESS_TTL as SignOptions['expiresIn'] },
       }),
     }),
     EventEmitterModule.forRoot({ wildcard: true }),

@@ -3,7 +3,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
-import { Role, ProductStatus } from '@prisma/client';
+import { Role, ProductStatus } from 'src/generated/prisma/client';
 import { Public, Roles } from '../../common/decorators/auth.decorators';
 import { Audit } from '../admin/audit.decorator';
 import { buildPagedMeta } from '../../common/dto/pagination.dto';

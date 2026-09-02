@@ -1,5 +1,5 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { CategoryStatus, Prisma } from '@prisma/client';
+import { CategoryStatus, Prisma } from 'src/generated/prisma/client';
 import { PrismaService } from '../../infra/prisma.service';
 import { slugify } from '../../common/utils/helpers';
 

@@ -1,4 +1,4 @@
-import { PaymentMethodType } from '@prisma/client';
+import { PaymentMethodType } from 'src/generated/prisma/client';
 
 export interface CreatePaymentInput {
   orderNumber: string;

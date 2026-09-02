@@ -2,7 +2,7 @@ import { BadRequestException, Body, Controller, Get, Headers, Param, Post, Query
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsArray, IsIn, IsInt, IsOptional, IsString, MaxLength, Min, ValidateNested } from 'class-validator';
-import { OrderStatus, PaymentMethodType } from '@prisma/client';
+import { OrderStatus, PaymentMethodType } from 'src/generated/prisma/client';
 import { CurrentUser } from '../../common/decorators/auth.decorators';
 import { buildPagedMeta } from '../../common/dto/pagination.dto';
 import { OrdersService, CheckoutDto } from './orders.service';

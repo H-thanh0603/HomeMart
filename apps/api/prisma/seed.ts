@@ -3,10 +3,14 @@
  * 22 categories (tree), 10 brands, 100+ products with variants/inventory,
  * users for all roles, vouchers, shipping methods.
  */
-import { PrismaClient, ProductStatus } from '@prisma/client';
+import { PrismaClient, ProductStatus } from '../src/generated/prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { Pool } from 'pg';
 import * as bcrypt from 'bcryptjs';
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient(
+  new PrismaPg(new Pool({ connectionString: process.env.DATABASE_URL })),
+);
 
 const slugify = (s: string) => {
   const from = 'àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ';

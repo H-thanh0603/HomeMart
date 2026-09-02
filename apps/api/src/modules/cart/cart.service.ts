@@ -1,5 +1,5 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma } from 'src/generated/prisma/client';
 import { PrismaService } from '../../infra/prisma.service';
 import { BusinessRuleError } from '../../common/exceptions/business.errors';
 

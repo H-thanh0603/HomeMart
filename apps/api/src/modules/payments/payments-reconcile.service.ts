@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
-import { PaymentStatus } from '@prisma/client';
+import { PaymentStatus } from 'src/generated/prisma/client';
 import { PrismaService } from '../../infra/prisma.service';
 
 /**

@@ -7,11 +7,14 @@
  */
 process.env.DATABASE_URL ||= 'postgresql://homemart:homemart_secret@localhost:54329/homemart?schema=public';
 
-import { PrismaClient, ProductStatus } from '@prisma/client';
+import { PrismaClient, ProductStatus } from 'src/generated/prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { InventoryService } from './modules/inventory/inventory.service';
 import { PromotionsService } from './modules/promotions/promotions.service';
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({
+  adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
+});
 
 jest.setTimeout(30000);
 

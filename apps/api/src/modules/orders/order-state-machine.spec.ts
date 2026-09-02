@@ -1,4 +1,4 @@
-import { OrderStatus } from '@prisma/client';
+import { OrderStatus } from 'src/generated/prisma/client';
 import { ORDER_TRANSITIONS, CUSTOMER_CANCELLABLE } from './orders.service';
 
 describe('Order State Machine (BR-5)', () => {

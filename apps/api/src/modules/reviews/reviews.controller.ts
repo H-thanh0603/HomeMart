@@ -2,7 +2,7 @@ import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { ArrayMaxSize, IsArray, IsIn, IsInt, IsOptional, IsString, IsUrl, Max, MaxLength, Min } from 'class-validator';
-import { Role } from '@prisma/client';
+import { Role } from 'src/generated/prisma/client';
 import { CurrentUser, Public, Roles } from '../../common/decorators/auth.decorators';
 import { clampLimit, clampPage } from '../../common/utils/helpers';
 import { Audit } from '../admin/audit.decorator';

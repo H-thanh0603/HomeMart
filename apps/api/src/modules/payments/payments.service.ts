@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { PaymentMethodType, PaymentStatus } from '@prisma/client';
+import { PaymentMethodType, PaymentStatus } from 'src/generated/prisma/client';
 import { PrismaService } from '../../infra/prisma.service';
 import { getEnv } from '../../config/env';
 import { BusinessRuleError } from '../../common/exceptions/business.errors';

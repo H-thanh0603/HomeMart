@@ -3,7 +3,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { diskStorage } from 'multer';
 import { randomUUID } from 'crypto';
-import { Role } from '@prisma/client';
+import { Role } from 'src/generated/prisma/client';
 import { Roles } from '../../common/decorators/auth.decorators';
 import { getEnv } from '../../config/env';
 import { UploadService } from './upload.service';

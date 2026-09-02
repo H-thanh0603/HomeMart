@@ -2,7 +2,7 @@ import { BadGatewayException, Body, Controller, Get, Param, Post, RawBodyRequest
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
 import { createHmac, timingSafeEqual } from 'crypto';
-import { PaymentMethodType } from '@prisma/client';
+import { PaymentMethodType } from 'src/generated/prisma/client';
 import { CurrentUser, Public } from '../../common/decorators/auth.decorators';
 import { getEnv } from '../../config/env';
 import { PaymentsService } from './payments.service';

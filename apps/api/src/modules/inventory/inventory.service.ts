@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { Prisma, InventoryTransactionType } from '@prisma/client';
+import { Prisma, InventoryTransactionType } from 'src/generated/prisma/client';
 import { PrismaService } from '../../infra/prisma.service';
 import { BusinessRuleError } from '../../common/exceptions/business.errors';
 

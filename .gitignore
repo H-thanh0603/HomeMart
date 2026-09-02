@@ -21,3 +21,6 @@ loadtest-result.json
 docker/certs/
 backups/
 .zcode/
+
+# prisma 7 generated client (prisma generate output)
+apps/api/src/generated/

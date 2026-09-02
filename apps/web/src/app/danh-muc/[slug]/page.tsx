@@ -3,17 +3,19 @@ import { getCategoryTheme } from '@/lib/category-themes';
 import { CategoryView } from './category-view';
 
 interface Props {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }
 
-export function generateMetadata({ params }: Props): Metadata {
-  const theme = getCategoryTheme(params.slug);
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { slug } = await params;
+  const theme = getCategoryTheme(slug);
   return {
     title: `${theme.name} — ${theme.title}`,
     description: theme.description,
   };
 }
 
-export default function CategoryLandingPage({ params }: Props) {
-  return <CategoryView slug={params.slug} />;
+export default async function CategoryLandingPage({ params }: Props) {
+  const { slug } = await params;
+  return <CategoryView slug={slug} />;
 }

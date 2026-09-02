@@ -43,8 +43,12 @@ function wrapLines(title: string, maxChars: number, maxLines: number): string[] 
   return lines.slice(0, maxLines);
 }
 
-export function GET(_req: NextRequest, { params }: { params: { path: string[] } }) {
-  const segments = Array.isArray(params.path) ? params.path : [];
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: Promise<{ path: string[] }> },
+) {
+  const { path } = await params;
+  const segments = Array.isArray(path) ? path : [];
   const fileName = decodeURIComponent(segments[segments.length - 1] ?? 'san-pham');
   const title = fileName
     .replace(/\.(jpg|jpeg|png|webp)$/i, '')

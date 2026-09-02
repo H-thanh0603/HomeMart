@@ -6,14 +6,15 @@ export const metadata: Metadata = {
   robots: { index: false },
 };
 
-export default function OrderRedirectPage({
+export default async function OrderRedirectPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
+  const { id } = await params;
   return (
     <div className="mx-auto max-w-4xl">
-      <OrderDetail orderId={params.id} />
+      <OrderDetail orderId={id} />
     </div>
   );
 }

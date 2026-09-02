@@ -7,7 +7,8 @@ import {
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { JwtService } from '@nestjs/jwt';
-import { UserStatus, Role } from '@prisma/client';
+import type { SignOptions } from 'jsonwebtoken';
+import { UserStatus, Role } from 'src/generated/prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { createHash } from 'crypto';
 import { PrismaService } from '../../infra/prisma.service';
@@ -223,11 +224,11 @@ export class AuthService {
     const envTtlDays = getEnv().JWT_REFRESH_TTL_DAYS;
     const accessToken = await this.jwt.signAsync(
       { sub: userId, email, role, type: 'access' },
-      { secret: getEnv().JWT_ACCESS_SECRET, expiresIn: getEnv().JWT_ACCESS_TTL ?? '15m' },
+      { secret: getEnv().JWT_ACCESS_SECRET, expiresIn: (getEnv().JWT_ACCESS_TTL ?? '15m') as SignOptions['expiresIn'] },
     );
     const refreshToken = await this.jwt.signAsync(
       { sub: userId, email, role, type: 'refresh', jti: randomToken(16) },
-      { secret: getEnv().JWT_REFRESH_SECRET, expiresIn: `${envTtlDays}d` },
+      { secret: getEnv().JWT_REFRESH_SECRET, expiresIn: `${envTtlDays}d` as SignOptions['expiresIn'] },
     );
     await this.prisma.refreshToken.create({
       data: {

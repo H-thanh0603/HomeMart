@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { createHash, randomInt } from 'crypto';
-import { OrderStatus, PaymentMethodType, Prisma } from '@prisma/client';
+import { OrderStatus, PaymentMethodType, Prisma } from 'src/generated/prisma/client';
 import { PrismaService } from '../../infra/prisma.service';
 import { BusinessRuleError } from '../../common/exceptions/business.errors';
 import { generateOrderNumber } from '../../common/utils/helpers';

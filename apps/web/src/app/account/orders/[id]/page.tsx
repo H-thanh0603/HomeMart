@@ -1,11 +1,10 @@
-'use client';
-
 import { OrderDetail } from '@/components/order/order-detail';
 
-export default function AccountOrderDetailPage({
+export default async function AccountOrderDetailPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  return <OrderDetail orderId={params.id} />;
+  const { id } = await params;
+  return <OrderDetail orderId={id} />;
 }

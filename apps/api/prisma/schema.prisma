@@ -2,12 +2,12 @@
 // Money: VND stored as BigInt-safe Int (VND has no minor units in practice)
 
 generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 // ─────────────────────────── ENUMS ───────────────────────────

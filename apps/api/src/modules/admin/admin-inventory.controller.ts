@@ -2,7 +2,7 @@ import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsInt, IsOptional, IsString } from 'class-validator';
-import { Role } from '@prisma/client';
+import { Role } from 'src/generated/prisma/client';
 import { CurrentUser, Roles } from '../../common/decorators/auth.decorators';
 import { Audit } from './audit.decorator';
 import { AdminService } from './admin.service';

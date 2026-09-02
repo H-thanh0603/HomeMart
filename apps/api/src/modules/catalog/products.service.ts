@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash } from 'crypto';
-import { Prisma, ProductStatus } from '@prisma/client';
+import { Prisma, ProductStatus } from 'src/generated/prisma/client';
 import { PrismaService } from '../../infra/prisma.service';
 import { RedisService } from '../../infra/redis.service';
 import { slugify } from '../../common/utils/helpers';
