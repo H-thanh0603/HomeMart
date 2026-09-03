@@ -1,8 +1,8 @@
-import { Body, Controller, Get, Ip, Post, Query, Req, Res } from '@nestjs/common';
+import { Body, Controller, Get, Ip, Post, Query, Req, Res, SetMetadata } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
 import { Public, CurrentUser, RequestUser } from '../../common/decorators/auth.decorators';
+import { RATE_LIMIT_KEY } from '../../common/guards/rate-limit.guard';
 import { getEnv } from '../../config/env';
 import {
   AuthService,
@@ -24,11 +24,10 @@ import {
  */
 const REFRESH_COOKIE = 'hm_rt';
 
-// Per-endpoint auth throttles scale with AUTH_THROTTLE_MULTIPLIER so load
+// Per-endpoint auth rate limits scale with AUTH_THROTTLE_MULTIPLIER so load
 // tests / flash sales can raise them without touching code.
-const AUTH_THROTTLE = (limit: number) => ({
-  default: { limit: limit * getEnv().AUTH_THROTTLE_MULTIPLIER, ttl: 60_000 },
-});
+const AUTH_RATE_LIMIT = (limit: number) =>
+  SetMetadata(RATE_LIMIT_KEY, { limit: limit * getEnv().AUTH_THROTTLE_MULTIPLIER, ttlSeconds: 60 });
 
 @ApiTags('auth')
 @Controller('auth')
@@ -56,7 +55,7 @@ export class AuthController {
   }
 
   @Public()
-  @Throttle(AUTH_THROTTLE(10))
+  @AUTH_RATE_LIMIT(10)
   @Post('register')
   @ApiOperation({ summary: 'Đăng ký tài khoản' })
   async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) res: Response) {
@@ -66,7 +65,7 @@ export class AuthController {
   }
 
   @Public()
-  @Throttle(AUTH_THROTTLE(10))
+  @AUTH_RATE_LIMIT(10)
   @Post('login')
   @ApiOperation({ summary: 'Đăng nhập' })
   async login(
@@ -84,7 +83,7 @@ export class AuthController {
   }
 
   @Public()
-  @Throttle(AUTH_THROTTLE(30)) // rotation happens on every page load — generous but bounded
+  @AUTH_RATE_LIMIT(30) // rotation happens on every page load — generous but bounded
   @Post('refresh')
   async refresh(
     @Body() dto: RefreshTokenDto,
@@ -107,14 +106,14 @@ export class AuthController {
   }
 
   @Public()
-  @Throttle(AUTH_THROTTLE(5))
+  @AUTH_RATE_LIMIT(5)
   @Post('forgot-password')
   forgotPassword(@Body() dto: ForgotPasswordDto) {
     return this.authService.forgotPassword(dto.email);
   }
 
   @Public()
-  @Throttle(AUTH_THROTTLE(10)) // token-bearing password change — prevent brute force on tokens
+  @AUTH_RATE_LIMIT(10) // token-bearing password change — prevent brute force on tokens
   @Post('reset-password')
   resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto.token, dto.newPassword);
@@ -127,7 +126,7 @@ export class AuthController {
   }
 
   @Public()
-  @Throttle(AUTH_THROTTLE(20))
+  @AUTH_RATE_LIMIT(20)
   @Get('verify-email')
   verifyEmail(@Query('token') token: string) {
     return this.authService.verifyEmail(token);
