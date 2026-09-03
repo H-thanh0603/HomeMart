@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { OrderStatus, ShipmentStatus } from 'src/generated/prisma/client';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { getEnv } from '../../config/env';
 import { PrismaService } from '../../infra/prisma.service';
 import { RedisService } from '../../infra/redis.service';
 import { CarrierProvider } from './carrier-provider.interface';
@@ -52,7 +53,9 @@ export class ShippingService {
       return { fee: 0, estimatedDaysMin: method.estimatedDaysMin, estimatedDaysMax: method.estimatedDaysMax };
     }
 
-    // Try carrier API first, fall back to formula — cache 1h trong Redis
+    // Cache hit → dùng ngay. Cache miss → trả phí công thức NGAY (không khách
+    // nào chờ gateway ship trong flash sale), đồng thời gọi GHN ngầm để warm
+    // cache 1h cho những người mua sau trên cùng tuyến.
     const defaultCarrier = this.carriers.values().next().value;
     if (defaultCarrier && input.toProvince && input.toDistrict) {
       const cacheKey = `ship:fee:${method.code}:${input.toProvince}:${input.toDistrict}:${input.toWard ?? ''}:${input.totalWeightGrams}`;
@@ -60,32 +63,45 @@ export class ShippingService {
       if (cached) {
         try { return JSON.parse(cached) as { fee: number; estimatedDaysMin: number; estimatedDaysMax: number }; } catch { /* ignore */ }
       }
-      try {
-        const carrierFee = await defaultCarrier.calculateFee({
-          serviceType: method.code,
-          fromProvince: process.env.GHN_FROM_PROVINCE ?? '',
-          fromDistrict: process.env.GHN_FROM_DISTRICT ?? '',
-          toProvince: input.toProvince,
-          toDistrict: input.toDistrict,
-          toWard: input.toWard ?? '',
-          weightGrams: input.totalWeightGrams,
-        });
-        const result = {
-          fee: carrierFee.fee,
-          estimatedDaysMin: carrierFee.estimatedDaysMin,
-          estimatedDaysMax: carrierFee.estimatedDaysMax,
-        };
-        await this.redis.set(cacheKey, JSON.stringify(result), 3600);
-        return result;
-      } catch (e) {
-        this.logger.warn(`Carrier API failed, falling back to formula: ${(e as Error).message}`);
-      }
+      this.warmCarrierFee(defaultCarrier, method.code, cacheKey, {
+        serviceType: method.code,
+        fromProvince: getEnv().GHN_FROM_PROVINCE ?? '',
+        fromDistrict: getEnv().GHN_FROM_DISTRICT ?? '',
+        toProvince: input.toProvince,
+        toDistrict: input.toDistrict,
+        toWard: input.toWard ?? '',
+        weightGrams: input.totalWeightGrams,
+      });
     }
 
-    // Fallback formula: baseFee + feePerKg × ceil(weightKg)
+    // Formula fee: baseFee + feePerKg × ceil(weightKg)
     const weightKg = Math.max(1, Math.ceil(input.totalWeightGrams / 1000));
     const fee = method.baseFee + method.feePerKg * weightKg;
     return { fee, estimatedDaysMin: method.estimatedDaysMin, estimatedDaysMax: method.estimatedDaysMax };
+  }
+
+  /** Fire-and-forget carrier quote — chỉ để warm cache, không chặn request. */
+  private warmCarrierFee(
+    carrier: CarrierProvider,
+    methodCode: string,
+    cacheKey: string,
+    input: Parameters<CarrierProvider['calculateFee']>[0],
+  ) {
+    void carrier
+      .calculateFee(input)
+      .then((quote) => {
+        const result = {
+          fee: quote.fee,
+          estimatedDaysMin: quote.estimatedDaysMin,
+          estimatedDaysMax: quote.estimatedDaysMax,
+        };
+        void this.redis.set(cacheKey, JSON.stringify(result), 3600);
+        this.logger.debug(`Carrier fee cached (warm): ${methodCode} ${cacheKey}`);
+      })
+      .catch((e: Error) => {
+        // Gateway chậm/chết: người mua vẫn trả phí công thức, không sao cả.
+        this.logger.warn(`Carrier warm-up failed for ${cacheKey}: ${e.message}`);
+      });
   }
 
   async createShipment(orderId: string, methodId: string, carrierOverride?: string) {
