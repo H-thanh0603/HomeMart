@@ -73,12 +73,15 @@ export class CartService {
   }
 
   async addItem(cartId: string, dto: { productId: string; variantId?: string; quantity: number }) {
-    const inv = await this.getInventory(dto.productId, dto.variantId);
-    const existing = await this.prisma.cartItem.findFirst({
-      where: { cartId, productId: dto.productId, variantId: dto.variantId ?? null },
-    });
-    const currentQty = existing?.quantity ?? 0;
-    const newQty = currentQty + dto.quantity;
+    // Flash-sale add-to-cart storm: 2 round-trips (inventory + existing item)
+    // in parallel instead of sequential, then one write.
+    const [inv, existing] = await Promise.all([
+      this.getInventory(dto.productId, dto.variantId),
+      this.prisma.cartItem.findFirst({
+        where: { cartId, productId: dto.productId, variantId: dto.variantId ?? null },
+      }),
+    ]);
+    const newQty = (existing?.quantity ?? 0) + dto.quantity;
     if (newQty > inv.availableStock) {
       throw new BusinessRuleError(`Only ${inv.availableStock} item(s) in stock`, 'OUT_OF_STOCK');
     }
