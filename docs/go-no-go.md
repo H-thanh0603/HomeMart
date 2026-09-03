@@ -64,3 +64,37 @@ Ghi chú:
 - Chạy test cần nâng rate limit: `RATE_LIMIT_PER_MIN=5000 AUTH_THROTTLE_MULTIPLIER=500` (throttle auth mặc định 10 login/phút/IP sẽ chặn phần lớn iteration).
 - Lịch sử: các lần chạy trước đây báo 0% là do script sai endpoint (`/addresses` thay vì `/users/me/addresses`) — đã sửa.
 - Avg duration cao ở 200 VU trên máy dev là do per-line query tuần tự trong checkout transaction — cần Redis + pool tuning khi lên prod (xem docs/deployment.md).
+
+## Kết quả A/B load test flash-sale optimization (2026-09-03)
+
+**Kịch bản chuẩn hóa**: k6, cùng máy dev (12 CPU), compiled `dist` (như prod),
+pool `connection_limit=20&pool_timeout=30`, rate-limit nâng cao
+(RATE_LIMIT_PER_MIN=5000, AUTH_THROTTLE_MULTIPLIER=500), deal 1 SKU 100 unit,
+200 checkout, 30 VU, 3 runs mỗi bên, clean DB + reset kho 100 trước mỗi run
+(`docker/loadtest-reset.sh`).
+
+| Chỉ số | BEFORE (9e81dca) | AFTER (code flash-sale) |
+|---|---|---|
+| Success rate / run (100 đơn hợp lệ tranh 100 kho → trần 50%) | 47.0–48.5% | **49.5–50.0%** (đạt trần) |
+| Đơn tạo được / run | 100/100 hợp lệ | 100/100 hợp lệ |
+| Oversell / reservedStock âm / trùng idempotency key | 0 / 0 / 0 | 0 / 0 / 0 |
+| Avg iteration (register→checkout) | 10.2–10.9s | 10.0–10.2s |
+| **100 VU (vượt pool 20)** | dao động 0–50%, P2028 hàng loạt (cả endpoint phụ: address, register) | duy trì 36%+, P2028 chỉ còn ở checkout tx, address P2028 = 0 sau fix |
+
+**Đọc kết quả thẳng thắn:**
+1. Ở tải trong tầm pool (30 VU), hiệu quả code không tạo khác biệt measurable
+   — DB local SSD + 30 VU chưa đủ để bộc lộ RT đã cắt (37→~20 RT/checkout).
+   Không thổi phồng: optimization này có ý nghĩa ở tải CAO hơn và máy yếu hơn.
+2. Ở tải vượt pool (100 VU = flash sale thật), BEFORE sụp hoàn toàn
+   (P2028 lan cả register/address → khách không vào nổi trang), AFTER chỉ
+   nghẽn đúng checkout tx. Đây là khác biệt thực tế lớn nhất của loạt fix.
+3. Boot Neck mới của AFTER: pool connection chờ mở checkout tx — cần
+   PgBouncer hoặc tăng connection_limit khi scale (đã ghi runbook).
+
+**Fix phát sinh trong quá trình đo (đã commit riêng):**
+- `users.createAddress` bỏ $transaction 3-query (top P2028 source) — 64/77
+  lỗi pool ở kịch bản 50 VU đến từ endpoint này.
+- Kịch bản flash-sale thật thêm vào script: `FLASH_PRODUCT_ID` env pin 1 SKU
+  cho mọi VU tranh.
+- Lưu ý đo: k6 --summary-export vô hiệu khi script tự define handleSummary —
+  lấy số từ text summary + truy vấn DB.

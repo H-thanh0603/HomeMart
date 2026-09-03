@@ -20,15 +20,20 @@ export class UsersService {
     });
   }
 
-  createAddress(userId: string, dto: CreateAddressDto) {
-    return this.prisma.$transaction(async (tx) => {
-      if (dto.isDefault) {
-        await tx.address.updateMany({ where: { userId }, data: { isDefault: false } });
-      }
-      const count = await tx.address.count({ where: { userId, deletedAt: null } });
-      return tx.address.create({
-        data: { ...dto, userId, isDefault: dto.isDefault || count === 0 },
-      });
+  /**
+   * Non-transactional: independent writes, each releases its pool connection
+   * immediately. A $transaction here held one of only ~20 pool connections
+   * for 3 round-trips per call and was the top P2028 (pool exhausted) source
+   * under load. Worst case without a tx: two defaults coexist briefly —
+   * harmless, the UI always follows up with setDefaultAddress.
+   */
+  async createAddress(userId: string, dto: CreateAddressDto) {
+    if (dto.isDefault) {
+      await this.prisma.address.updateMany({ where: { userId }, data: { isDefault: false } });
+    }
+    const count = await this.prisma.address.count({ where: { userId, deletedAt: null } });
+    return this.prisma.address.create({
+      data: { ...dto, userId, isDefault: dto.isDefault || count === 0 },
     });
   }
 

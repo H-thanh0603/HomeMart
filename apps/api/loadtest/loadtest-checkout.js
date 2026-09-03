@@ -144,6 +144,17 @@ function addToCart(token, productId) {
 }
 
 function getRandomProduct() {
+  // FLASH_PRODUCT_ID (env): kịch bản deal thật — mọi VU tranh 1 SKU duy nhất.
+  // Giá trị là PRODUCT ID; route /products/:slug cần slug nên resolve qua
+  // danh sách 1 lần. Mặc định: chọn random như cũ.
+  const pinned = __ENV.FLASH_PRODUCT_ID;
+  if (pinned) {
+    const res = http.get(`${API_URL}/products?limit=100&status=PUBLISHED`);
+    if (res.status !== 200) return null;
+    const body = safeJson(res);
+    const products = body?.data?.items ?? body?.data ?? body?.items ?? [];
+    return products.find((p) => p && p.id === pinned) ?? null;
+  }
   const res = http.get(`${API_URL}/products?limit=50&status=PUBLISHED`);
   if (res.status !== 200) return null;
   const body = safeJson(res);
