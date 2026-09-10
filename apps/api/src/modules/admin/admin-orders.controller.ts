@@ -99,6 +99,14 @@ export class AdminOrdersController {
     return this.paymentsService.refundViaGateway(orderId);
   }
 
+  @Post('ops/expire-pending')
+  @Roles(Role.MANAGER)
+  @Audit('order.expire_pending', 'Order')
+  @ApiOperation({ summary: "[Admin] Hết hạn đơn PENDING quá ORDER_PAYMENT_TIMEOUT_MINUTES (giải phóng kho) — cron gọi endpoint này mỗi 5 phút" })
+  expirePending() {
+    return this.paymentsService.expirePendingOrders();
+  }
+
   @Post('ops/reconcile')
   @Roles(Role.MANAGER)
   @ApiOperation({ summary: '[Admin] Đối soát payment vs order (chạy hằng ngày)' })

@@ -222,7 +222,7 @@ export class PaymentsService {
       try {
         await this.prisma.$transaction(async (tx) => {
           const updated = await tx.$queryRaw<{ id: string }[]>`
-            UPDATE orders SET status = 'CANCELLED'::"OrderStatus", version = version + 1, cancelled_reason = 'payment_timeout'
+            UPDATE orders SET status = 'CANCELLED'::"OrderStatus", version = version + 1, "cancelledReason" = 'payment_timeout'
             WHERE id = ${order.id} AND status = 'PENDING'
             RETURNING id`;
           if (!updated.length) return;

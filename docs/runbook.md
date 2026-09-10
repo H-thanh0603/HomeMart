@@ -16,17 +16,25 @@
 
 Hoặc dùng UptimeRobot / BetterStack trỏ vào `/api/v1/health` (hoặc `/health` qua nginx).
 
-## 2. Đối soát hằng ngày
+## 2. Đối soát hằng ngày + hết hạn đơn PENDING
 
 ```bash
-# 03:00 hằng ngày — cần ADMIN_TOKEN của MANAGER/ADMIN
-0 3 * * * root API_URL=http://localhost/api/v1 ADMIN_TOKEN=$(cat /run/secrets/homemart-admin-token) /opt/homemart/docker/cron-reconcile.sh
+# 03:00 hằng ngày — đối soát payment vs order (cần ADMIN_TOKEN của MANAGER/ADMIN)
+0 3 * * * root API_URL=http://localhost/api/v1 ADMIN_TOKEN=$(cat /run/secrets/homemart-admin-token) /opt/homemart/docker/cron-ops.sh reconcile
+
+# 5 phút 1 lần — hết hạn đơn PENDING quá ORDER_PAYMENT_TIMEOUT_MINUTES, giải phóng kho
+*/5 * * * * root API_URL=http://localhost/api/v1 ADMIN_TOKEN=$(cat /run/secrets/homemart-admin-token) /opt/homemart/docker/cron-ops.sh expire-pending
 ```
-Kết quả ghi vào `/var/log/homemart-reconcile.log`. Nếu `mismatched > 0`, kiểm tra `audit-log` và báo cáo gateway (VNPay/MoMo CSV).
+Kết quả ghi vào `/var/log/homemart-<task>.log`. Nếu `mismatched > 0`, kiểm tra `audit-log` và báo cáo gateway (VNPay/MoMo CSV).
+
+> **Tại sao phải chạy expire-pending:** đơn PENDING khách bỏ thanh toán giữ
+> `reservedStock` — không có cron này, kho "chết dần" theo từng đơn bỏ quên.
+> Endpoint là idempotent (chỉ đếm đơn PENDING cũ hơn timeout), chạy lại vô hại.
 
 Thủ công:
 ```bash
 curl -X POST http://localhost/api/v1/admin/orders/ops/reconcile -H "Authorization: Bearer $ADMIN_TOKEN"
+curl -X POST http://localhost/api/v1/admin/orders/ops/expire-pending -H "Authorization: Bearer $ADMIN_TOKEN"
 ```
 
 ## 3. Backup & Restore drill
