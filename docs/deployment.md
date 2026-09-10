@@ -22,6 +22,8 @@ Toàn bộ production stack được đóng gói sẵn:
 
 ### Triển khai
 
+> ⚠ **Single-host, KHÔNG zero-downtime** — mỗi `docker compose up -d` downtime ~30-60s. Quyết định + rủi ro + đường thoát (không đổi code): `docs/adr/0002-single-host-production.md`.
+
 ```bash
 # 1. Tạo env production (KHÔNG commit file này)
 cp .env.production.example .env.production
