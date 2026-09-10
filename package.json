@@ -21,8 +21,6 @@
     "node": ">=20"
   },
   "dependencies": {
-    "deepmerge-ts": "^8.0.2",
-    "mysql2": "^3.24.2",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-is": "^19.2.8"
@@ -35,9 +33,7 @@
     "lodash": "^4.18.1",
     "body-parser": "^2.3.0",
     "qs": "^6.16.0",
-    "postcss": "^8.5.26",
-    "deepmerge-ts": "^8.0.2",
-    "mysql2": "^3.24.2"
+    "postcss": "^8.5.26"
   },
   "allowScripts": {
     "prisma@7.10.0": true,

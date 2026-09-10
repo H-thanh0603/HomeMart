@@ -1,0 +1,22 @@
+HomeMart — NOTICE
+=================
+
+Sản phẩm này chứa code từ các dự án sau, giữ nguyên license gốc:
+
+-------------------------------------------------------------------------------
+1. anthropics/commerce-agents — commerce_common/fencing.py
+   File trong repo: apps/api/src/modules/agent/fencing.ts
+   Loại: port (chuyển Python → TypeScript, giữ nguyên thuật toán)
+   License: Apache License 2.0
+   Source: https://github.com/anthropics/commerce-agents
+
+   Port được dùng làm prompt-injection sanitizer cho shopping-agent module
+   (WIP — xem apps/api/src/modules/agent/README.md). Theo điều khoản
+   Apache-2.0 (section 4), ghi nhận modification tại đây: chuyển ngôn ngữ,
+   đổi fence label sang 'store_data', thêm bounded truncation.
+
+   Apache License 2.0 tóm tắt: https://www.apache.org/licenses/LICENSE-2.0
+   (bản đầy đủ: https://www.apache.org/licenses/LICENSE-2.0.txt)
+-------------------------------------------------------------------------------
+
+Mọi phần còn lại của HomeMart là code gốc, theo MIT (xem LICENSE).
