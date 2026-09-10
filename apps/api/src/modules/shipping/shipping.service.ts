@@ -6,6 +6,7 @@ import { PrismaService } from '../../infra/prisma.service';
 import { RedisService } from '../../infra/redis.service';
 import { CarrierProvider } from './carrier-provider.interface';
 import { GhnProvider } from './providers/ghn.provider';
+import { ORDER_TRANSITIONS } from '../orders/orders.service';
 
 export interface ShippingQuoteInput {
   methodId: string;
@@ -214,16 +215,48 @@ export class ShippingService {
     };
 
     const shipmentStatus = statusMap[parsed.status] ?? 'IN_TRANSIT';
-    await this.updateTracking(shipment.id, { status: shipmentStatus });
 
-    // Update order status based on shipment events
-    if (shipmentStatus === 'PICKED_UP' && shipment.order.status === OrderStatus.CONFIRMED) {
-      await this.prisma.order.update({ where: { id: shipment.orderId }, data: { status: OrderStatus.PROCESSING } });
-      this.events.emit('order.status_changed', { orderId: shipment.orderId, from: 'CONFIRMED', to: 'PROCESSING' });
+    // Idempotency: carrier retry gửi lại cùng event → skip (vẫn trả OK để
+    // carrier ngừng retry). So sánh cả status lẫn thời điểm — chỉ bỏ qua
+    // khi KHÔNG có gì đổi.
+    const lastLog = Array.isArray(shipment.logs)
+      ? (shipment.logs as Array<{ at?: string; status?: string }>)[(shipment.logs as unknown[]).length - 1]
+      : undefined;
+    const duplicateEvent =
+      shipment.status === shipmentStatus &&
+      lastLog?.status === parsed.status &&
+      lastLog?.at;
+
+    if (!duplicateEvent) {
+      await this.updateTracking(shipment.id, { status: shipmentStatus });
     }
-    if (shipmentStatus === 'DELIVERED') {
-      await this.prisma.order.update({ where: { id: shipment.orderId }, data: { status: OrderStatus.DELIVERED } });
-      this.events.emit('order.status_changed', { orderId: shipment.orderId, from: shipment.order.status, to: 'DELIVERED' });
+
+    // Update order status based on shipment events — qua state machine
+    // (BR-5): terminal states (CANCELLED/COMPLETED/REFUNDED) không bao giờ
+    // bị webhook "hồi sinh"; transition chỉ xảy ra khi hợp lệ.
+    const order = shipment.order;
+    const deliverableStatuses: OrderStatus[] = [OrderStatus.SHIPPED, OrderStatus.PROCESSING, OrderStatus.PACKING];
+    const to: OrderStatus | null =
+      shipmentStatus === 'PICKED_UP' && order.status === OrderStatus.CONFIRMED
+        ? OrderStatus.PROCESSING
+        : shipmentStatus === 'DELIVERED' && deliverableStatuses.includes(order.status)
+          ? OrderStatus.DELIVERED
+          : null;
+
+    if (to && ORDER_TRANSITIONS[order.status]?.includes(to)) {
+      // Optimistic-lock guard: chỉ update khi version vẫn như lúc đọc —
+      // tránh đè lên transition admin vừa thực hiện song song.
+      const updated = await this.prisma.$executeRaw`
+        UPDATE orders SET status = ${to}::"OrderStatus", version = version + 1
+        WHERE id = ${shipment.orderId} AND version = ${order.version} AND status = ${order.status}::"OrderStatus"`;
+      if (updated > 0) {
+        await this.prisma.orderStatusHistory.create({
+          data: { orderId: shipment.orderId, fromStatus: order.status, toStatus: to, actorId: null, note: `Carrier ${carrierName} webhook: ${parsed.status}` },
+        });
+        this.events.emit('order.status_changed', { orderId: shipment.orderId, from: order.status, to });
+      } else {
+        this.logger.warn(`Webhook ${carrierName} ${parsed.status}: order ${order.orderNumber} changed concurrently — skipped (state machine guard)`);
+      }
     }
 
     return { ok: true, message: `Shipment ${parsed.trackingCode} updated to ${shipmentStatus}` };
