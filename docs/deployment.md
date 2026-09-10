@@ -70,17 +70,25 @@ Nginx hiện terminate ở port 80. Để bật HTTPS:
 
 ### Backup & restore
 
-```bash
-# Backup nightly (cron)
-docker compose -f docker-compose.prod.yml exec postgres \
-  pg_dump -U homemart -Fc homemart > backup_$(date +%F).dump
+Service `backup` (alpine + crond) chạy `docker/backup-job.sh` mỗi đêm 02:00 và backup **cả 2 thứ**:
 
-# Restore
-cat backup_2026-08-26.dump | docker compose -f docker-compose.prod.yml exec -T postgres \
-  pg_restore -U homemart -d homemart --clean
+1. **PostgreSQL** → `./backups/homemart-<ts>.sql.gz` (pg_dump + gzip, verify bằng `gzip -t`)
+2. **Uploads volume** (ảnh sản phẩm) → `./backups/uploads-<ts>.tar.gz` — mất volume này là mất toàn bộ ảnh catalog, KHÔNG thể tái tạo từ seed.
+
+```bash
+# Verify backup gần nhất
+ls -lh backups/ | tail -4
+
+# Restore DATABASE
+cat backups/homemart-<ts>.sql.gz | gunzip | docker compose -f docker-compose.prod.yml exec -T postgres \
+  psql -U homemart -d homemart
+
+# Restore UPLOADS (cần máy chủ chính)
+cat backups/uploads-<ts>.tar.gz | docker run --rm -i -v homemart-uploads:/uploads alpine \
+  sh -c 'rm -rf /uploads/* && tar -xzf - -C /uploads'
 ```
 
-Giữ tối thiểu 30 ngày backup; restore drill hàng quý.
+Giữ tối thiểu 30 ngày backup; restore drill hàng quý (launch-checklist 3.3) — drill phải cover **cả hai** loại file.
 
 ### Checklist go-live
 

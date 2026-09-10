@@ -78,6 +78,8 @@ services:
     volumes:
       - ./docker/backup-job.sh:/etc/periodic/daily/backup:ro
       - ./backups:/backups
+      # Backup cả uploads volume (ảnh sản phẩm) — mất là mất toàn bộ ảnh catalog
+      - uploads:/uploads:ro
     depends_on:
       postgres:
         condition: service_healthy
