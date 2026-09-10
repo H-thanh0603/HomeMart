@@ -82,10 +82,21 @@ Giữ tối thiểu 30 ngày backup; restore drill hàng quý.
 
 ### Checklist go-live
 
-1. Env: secrets random ≥ 32 ký tự, đổi mọi default trong `.env.production`.
+1. Env: secrets random ≥ 32 ký tự, đổi mọi default trong `.env.production` — **dùng `./docker/generate-secrets.sh`** (không gõ tay secrets thật vào file nằm trong thư mục dự án — zip/share nguyên thư mục là rò rỉ; nếu từng share với secrets thật → sinh lại toàn bộ, DB password cần cả `ALTER USER`).
 2. Payment return URLs trỏ về domain thật (`VNPAY_RETURN_URL`, `MOMO_RETURN_URL`).
 3. SMTP production (SendGrid/Mailgun/SES) — MailHog không có trong stack prod.
 4. Health check: `GET /api/v1/health` — dùng làm probe cho load balancer.
 5. Logs: stdout JSON (Docker logging driver); Sentry DSN optional.
 6. Scale: api + web stateless → scale ngang sau nginx/ALB; postgres vertical first.
 7. Image registry: `docker tag homemart-api registry/x/homemart-api:$GIT_SHA && docker push`.
+
+### Quản lý secrets (bắt buộc đọc trước khi nộp/đưa đồ án đi đâu)
+
+- `.env.production` bị gitignore nhưng **vẫn nằm trên đĩa trong thư mục dự án** —
+  nộp zip toàn bộ thư mục (Drive, GitHub release, LMS...) là lộ secrets.
+- Luôn dùng `./docker/generate-secrets.sh` để sinh: nó ghi đè secrets trong file
+  và `chmod 600`, không để lại lịch sử giá trị cũ trong shell.
+- Trước khi nộp zip: `./docker/generate-secrets.sh` (sinh giá trị mới vô nghĩa)
+  hoặc xóa `.env.production` + `.env` khỏi zip. Kiểm tra bằng:
+  `grep -rlE '(JWT_[A-Z]+_SECRET|POSTGRES_PASSWORD|SECRET_KEY)=[^_\\s]{20,}' . --include='.env*' --exclude='*.example'`.
+- Lâu dài: chuyển sang SOPS/Vault/GitHub Secrets — file env chỉ giữ placeholder.

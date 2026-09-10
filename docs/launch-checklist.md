@@ -41,7 +41,7 @@ Ngày bắt đầu: 2026-08-26 · Chủ trì: Tech Lead + Ops
 | 3.1 | Trang Chính sách: đổi trả 7 ngày, bảo hành, VAT (ghi rõ đã/chưa gồm VAT) | Content/Legal | 3 trang public có link ở footer |
 | 3.2 | Quy trình đổi trả 2 bước: `RETURN_REQUESTED` cần MANAGER duyệt mới → `RETURNED → REFUNDED` (hiện STAFF hủy được đơn đã thanh toán) | Backend | Không thể tự hủy đơn đã thanh toán ở role STAFF |
 | 3.3 | Quan sát: alert khi `GET /api/v1/health` ≠ `ok`, cron `docker/backup-db.sh` + **test restore 1 lần** lên DB rỗng | Infra | Backup 7 ngày còn đủ, restore drill pass |
-| 3.4 | Xoay `JWT_*_SECRET` production, bật HSTS sau khi có TLS, verify `trust proxy` rate-limit theo IP thật | Infra | `curl -I` thấy `Strict-Transport-Security` |
+| 3.4 | Xoay `JWT_*_SECRET` production (dùng `docker/generate-secrets.sh` — không gõ tay secrets vào file trong thư mục dự án), bật HSTS sau khi có TLS, verify `trust proxy` rate-limit theo IP thật | Infra | `curl -I` thấy `Strict-Transport-Security` |
 
 **Gate tuần 3:** 1 ca đổi trả giả định đi hết flow, tiền hoàn về.
 
