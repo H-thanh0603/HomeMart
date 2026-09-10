@@ -89,30 +89,69 @@ export class InventoryService {
     });
   }
 
-  /** Payment success → reserved becomes sold. */
+  /**
+   * Payment success → reserved becomes sold.
+   * Set-based like `reserve`: constant query count for any number of items
+   * (was a per-item loop → 3N+1 queries on the payment-success hot path).
+   * Payment success is already serialized by the webhook idempotency guard,
+   * so plain decrements are safe here — but the UPDATE still guards against
+   * reservedStock going negative (double-commit of the same order would be
+   * caught upstream by the payment-status check).
+   */
   async commitSale(tx: Tx, items: ReserveItem[], orderId: string) {
+    if (!items.length) return;
+
+    // 1. Resolve + aggregate by inventory id in one findMany
+    const invs = await tx.inventory.findMany({
+      where: {
+        OR: items.map((i) => (i.variantId ? { variantId: i.variantId } : { productId: i.productId, variantId: null })),
+      },
+    });
+    const byItemKey = new Map(invs.map((inv) => [inv.variantId ?? inv.productId, inv]));
+    const qtyByInvId = new Map<string, { qty: number; productId: string }>();
     for (const item of items) {
-      const inv = await this.getInventory(tx, item);
-      await tx.inventory.update({
-        where: { id: inv.id },
-        data: {
-          reservedStock: { decrement: item.quantity },
-          soldStock: { increment: item.quantity },
-        },
-      });
-      await tx.product.update({
-        where: { id: item.productId },
-        data: { soldCount: { increment: item.quantity } },
-      });
-      await tx.inventoryTransaction.create({
-        data: {
-          inventoryId: inv.id,
-          type: InventoryTransactionType.COMMIT_SALE,
-          quantity: -item.quantity,
-          reference: orderId,
-        },
-      });
+      const inv = byItemKey.get(item.variantId ?? item.productId);
+      if (!inv) throw new NotFoundException(`Inventory not found for product ${item.productId}`);
+      const agg = qtyByInvId.get(inv.id);
+      if (agg) agg.qty += item.quantity;
+      else qtyByInvId.set(inv.id, { qty: item.quantity, productId: item.productId });
     }
+
+    // 2. One UPDATE for inventories (reserved → sold), guarded >= 0
+    const values = Prisma.join(
+      [...qtyByInvId.entries()].map(([id, { qty }]) => Prisma.sql`(${id}::text, ${qty}::int)`),
+    );
+    await tx.$executeRaw`
+      UPDATE inventories AS i
+      SET "reservedStock" = i."reservedStock" - v.qty,
+          "soldStock" = i."soldStock" + v.qty
+      FROM (VALUES ${values}) AS v(id, qty)
+      WHERE i.id = v.id AND i."reservedStock" >= v.qty`;
+
+    // 3. One UPDATE for product.soldCount (aggregate by product first —
+    //    the same product can appear on several order items via variants)
+    const soldByProduct = new Map<string, number>();
+    for (const { productId, qty } of qtyByInvId.values()) {
+      soldByProduct.set(productId, (soldByProduct.get(productId) ?? 0) + qty);
+    }
+    const productValues = Prisma.join(
+      [...soldByProduct.entries()].map(([id, qty]) => Prisma.sql`(${id}::text, ${qty}::int)`),
+    );
+    await tx.$executeRaw`
+      UPDATE products AS p
+      SET "soldCount" = p."soldCount" + v.qty
+      FROM (VALUES ${productValues}) AS v(id, qty)
+      WHERE p.id = v.id`;
+
+    // 4. Ledger rows in one createMany
+    await tx.inventoryTransaction.createMany({
+      data: [...qtyByInvId.entries()].map(([invId, { qty }]) => ({
+        inventoryId: invId,
+        type: InventoryTransactionType.COMMIT_SALE,
+        quantity: -qty,
+        reference: orderId,
+      })),
+    });
     this.events.emit('inventory.checked', { orderId });
   }
 
