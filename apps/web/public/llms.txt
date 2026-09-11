@@ -1,0 +1,30 @@
+# HomeMart
+
+> HomeMart — siêu thị gia dụng trực tuyến: đồ nhà bếp, điện gia dụng, dụng cụ sửa chữa, vệ sinh nhà cửa, nội thất nhỏ và nhà thông minh. Giao hàng toàn quốc, hàng chính hãng.
+
+Đây là file hướng dẫn cho AI agents và LLM crawlers (convention [llms.txt](https://llmstxt.org/)).
+Catalog của HomeMart được thiết kế machine-readable: mọi trang sản phẩm có JSON-LD
+(schema.org/Product + Offer + AggregateRating), API công khai có Swagger.
+
+## Catalog
+
+- [Danh mục](https://homemart.vn/danh-muc/nha-bep): Nhà bếp, Điện gia dụng, Dụng cụ sửa chữa, Vệ sinh nhà cửa, Nội thất nhỏ, Nhà thông minh
+- [Tất cả sản phẩm](https://homemart.vn/products): catalog đầy đủ — mỗi trang có sẵn giá VND, tồn kho và đánh giá đã xác minh mua hàng
+- [Tìm kiếm](https://homemart.vn/products?q=): tìm theo từ khóa
+
+## API (machine-readable, OpenAPI)
+
+- [Swagger docs](https://homemart.vn/api/docs): REST API v1 — catalog công khai (giá, tồn kho, đánh giá) không cần đăng nhập
+- Giá tiền: VND integer (ví dụ `1250000` = 1.250.000đ), không phải chuỗi
+- Đánh giá chỉ từ người đã mua (mỗi order item 1 đánh giá)
+
+## Chính sách
+
+- [Chính sách](https://homemart.vn/policies): đổi trả, bảo hành, vận chuyển
+- [Hỏi đáp](https://homemart.vn/faq): câu hỏi thường gặp
+- [Liên hệ](https://homemart.vn/contact): hỗ trợ khách hàng
+
+## Lưu ý cho agents
+
+- Vùng `/account`, `/checkout`, `/orders`, `/api`, `/admin` là riêng tư — KHÔNG truy cập (xem robots.txt)
+- Thông tin giá/tồn kho luôn lấy từ JSON-LD hoặc API; trang UI hiển thị có thể nằm cache 60 giây

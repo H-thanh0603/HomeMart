@@ -3,9 +3,15 @@ import type { MetadataRoute } from 'next';
 const THEME_SLUGS = ['nha-bep', 'dien-gia-dung', 'dung-cu-sua-chua', 've-sinh-nha-cua', 'noi-that-nho', 'nha-thong-minh'];
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  const [staticWithCategories, products] = await Promise.all([staticRoutes(), productRoutes()]);
+  return [...staticWithCategories, ...products];
+}
+
+/** Routes tĩnh + categories động (fallback static nếu API chưa chạy ở build time). */
+async function staticRoutes(): Promise<MetadataRoute.Sitemap> {
   const base = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://homemart.vn';
   const now = new Date();
-  const staticRoutes: MetadataRoute.Sitemap = [
+  const routes: MetadataRoute.Sitemap = [
     { url: `${base}/`, lastModified: now, changeFrequency: 'daily', priority: 1 },
     { url: `${base}/products`, lastModified: now, changeFrequency: 'daily', priority: 0.9 },
     ...THEME_SLUGS.map((slug) => ({
@@ -30,7 +36,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         const cats = json.data ?? [];
         if (cats.length) {
           return [
-            ...staticRoutes,
+            ...routes,
             ...cats
               .filter((c) => !THEME_SLUGS.includes(c.slug))
               .map((c) => ({
@@ -44,5 +50,40 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       }
     }
   } catch { /* fallback static */ }
-  return staticRoutes;
+  return routes;
+}
+
+/** Catalog công khai — deep links cho search engines và AI agents.
+ *  API limit max 100/page nên phân trang tối đa SITEMAP_MAX_PAGES trang. */
+const SITEMAP_MAX_PAGES = 5;
+async function productRoutes(): Promise<MetadataRoute.Sitemap> {
+  const base = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://homemart.vn';
+  const now = new Date();
+  const apiBase = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
+  if (!apiBase.startsWith('http')) return [];
+  const routes: MetadataRoute.Sitemap = [];
+  try {
+    for (let page = 1; page <= SITEMAP_MAX_PAGES; page++) {
+      const res = await fetch(
+        `${apiBase}/products?limit=100&page=${page}&sort=newest`,
+        { next: { revalidate: 3600 } },
+      );
+      if (!res.ok) break;
+      const json = (await res.json()) as { data?: { items?: { slug: string; updatedAt?: string }[] } };
+      const items = json.data?.items ?? [];
+      if (items.length === 0) break;
+      routes.push(
+        ...items.map((p) => ({
+          url: `${base}/products/${p.slug}`,
+          lastModified: p.updatedAt ? new Date(p.updatedAt) : now,
+          changeFrequency: 'daily' as const,
+          priority: 0.6,
+        })),
+      );
+      if (items.length < 100) break; // hết dữ liệu
+    }
+  } catch {
+    // API chưa chạy ở build time → sitemap chỉ có static routes (đã test)
+  }
+  return routes;
 }
