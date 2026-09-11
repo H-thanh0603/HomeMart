@@ -128,6 +128,13 @@ export function getEnv(): Env {
       if (env.GHN_TOKEN && !env.GHN_WEBHOOK_TOKEN) {
         missing.push('  - GHN_WEBHOOK_TOKEN is required in production when GHN_TOKEN is set (carrier webhook fails closed)');
       }
+      // GHN tích hợp thật (GHN_TOKEN set) nhưng địa chỉ lấy hàng còn là default
+      // giả → GHN sẽ từ chối tạo vận đơn hoặc giao từ địa chỉ không tồn tại.
+      if (env.GHN_TOKEN) {
+        if (env.GHN_FROM_PHONE === '0123456789') missing.push('  - GHN_FROM_PHONE still the default placeholder (real pickup phone required)');
+        if (env.GHN_FROM_ADDRESS === '123 ABC, Phường 1, Quận 1') missing.push('  - GHN_FROM_ADDRESS still the default placeholder (real warehouse address required)');
+        if (!env.GHN_FROM_WARD) missing.push('  - GHN_FROM_WARD required in production when GHN_TOKEN is set (GHN needs the ward id for pickup)');
+      }
       // Credentials present but still pointed at a sandbox gateway = money lost
       // silently. Refuse to boot; operator must set the production URL.
       for (const [key, pattern] of SANDBOX_URLS) {
