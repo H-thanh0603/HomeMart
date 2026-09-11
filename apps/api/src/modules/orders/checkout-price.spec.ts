@@ -20,7 +20,6 @@ import { OrdersService, type CheckoutDto } from './orders.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { PromotionsService } from '../promotions/promotions.service';
 import { ShippingService } from '../shipping/shipping.service';
-import { GhnProvider } from '../shipping/providers/ghn.provider';
 import { RedisService } from '../../infra/redis.service';
 import type { PrismaService } from '../../infra/prisma.service';
 
@@ -88,7 +87,6 @@ describe('OrdersService.checkout — price-change-during-checkout (BR-1)', () =>
     const events = new EventEmitter2();
     const inventory = new InventoryService(prisma as never, events);
     const promotions = new PromotionsService(prisma as never);
-    const ghn = new GhnProvider();
     // RedisService lazy-connect — test không chạm redis path của computeFee
     const redisStub = { get: jest.fn(), set: jest.fn(), del: jest.fn(), tryLock: jest.fn(async () => true) } as never;
     const shipping = new (ShippingService as unknown as new (
