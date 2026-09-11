@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { Providers } from './providers';
 import { Header, Footer } from '@/components/layout/header-footer';
+import { organizationJsonLd, websiteJsonLd } from '@/lib/schema';
+import { JsonLd } from '@/components/json-ld';
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://homemart.vn';
 
@@ -27,6 +29,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="vi" className="scroll-smooth">
       <body className="flex min-h-screen flex-col bg-slate-50 font-sans text-slate-800 antialiased">
+        {/* Machine-readable cho search engines + AI agents (schema.org) */}
+        <JsonLd data={organizationJsonLd()} />
+        <JsonLd data={websiteJsonLd()} />
         {/* <!--
           THESIS: Fresh, warm & modern Vietnamese home goods e-commerce refusing sterile corporate grids in favor of vibrant emerald warmth and cozy living spaces.
           OWN-WORLD: Emerald Mint (#059669) botanical freshness with warm amber (#f97316) energy, generous rounded-2xl containers, breathable rhythm and tactile micro-interactions.

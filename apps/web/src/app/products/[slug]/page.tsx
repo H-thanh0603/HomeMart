@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import { ProductDetail } from './product-detail';
 import { API_BASE_URL } from '@/lib/api';
 import type { ApiEnvelope, Product } from '@/lib/types';
+import { productJsonLd, breadcrumbJsonLd } from '@/lib/schema';
+import { JsonLd } from '@/components/json-ld';
 
 async function getProduct(slug: string): Promise<Product | null> {
   try {
@@ -52,5 +54,37 @@ export default async function ProductPage({
 }) {
   const { slug } = await params;
   const initial = await getProduct(slug);
-  return <ProductDetail slug={slug} initial={initial} />;
+  if (!initial) return null;
+
+  const availableStock = initial.inventory?.availableStock;
+  const crumbs = breadcrumbJsonLd([
+    { name: 'Trang chủ', href: '/' },
+    { name: 'Sản phẩm', href: '/products' },
+    ...(initial.category ? [{ name: initial.category.name, href: `/danh-muc/${initial.category.slug}` }] : []),
+    { name: initial.name, href: `/products/${initial.slug}` },
+  ]);
+
+  return (
+    <>
+      <JsonLd data={crumbs} />
+      <JsonLd
+        data={productJsonLd({
+          slug: initial.slug,
+          name: initial.name,
+          sku: initial.sku,
+          shortDescription: initial.shortDescription,
+          price: initial.price,
+          compareAtPrice: initial.compareAtPrice,
+          status: initial.status,
+          ratingAvg: initial.ratingAvg,
+          reviewCount: initial.reviewCount,
+          brandName: initial.brand?.name ?? null,
+          categoryName: initial.category?.name ?? null,
+          images: initial.images,
+          availableStock,
+        })}
+      />
+      <ProductDetail slug={slug} initial={initial} />
+    </>
+  );
 }
