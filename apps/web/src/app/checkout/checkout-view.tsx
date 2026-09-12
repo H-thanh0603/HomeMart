@@ -89,30 +89,21 @@ export function CheckoutView() {
   const idempotencyRef = useRef<{ payload: string; key: string } | null>(null);
 
   const addresses = useMemo(() => addressesQuery.data ?? [], [addressesQuery.data]);
+  const effectiveAddressId = addressId || (addresses.find((a) => a.isDefault) ?? addresses[0])?.id || '';
+  const shippingMethods = useMemo(() => shippingQuery.data ?? [], [shippingQuery.data]);
+  const effectiveShippingMethodId = shippingMethodId || shippingMethods[0]?.id || '';
   const items = useMemo(
     () => (cartQuery.data?.items ?? []).filter((i) => !i.savedForLater),
     [cartQuery.data],
   );
 
-  useEffect(() => {
-    if (!addressId && addresses.length > 0) {
-      setAddressId((addresses.find((a) => a.isDefault) ?? addresses[0]).id);
-    }
-  }, [addresses, addressId]);
-
-  useEffect(() => {
-    if (!shippingMethodId && (shippingQuery.data?.length ?? 0) > 0) {
-      setShippingMethodId(shippingQuery.data![0].id);
-    }
-  }, [shippingQuery.data, shippingMethodId]);
-
   const previewBody = useMemo(
     () => ({
-      addressId: addressId || undefined,
-      shippingMethodId: shippingMethodId || undefined,
+      addressId: effectiveAddressId || undefined,
+      shippingMethodId: effectiveShippingMethodId || undefined,
       voucherCode,
     }),
-    [addressId, shippingMethodId, voucherCode],
+    [effectiveAddressId, effectiveShippingMethodId, voucherCode],
   );
 
   const preview = useOrderPreview(previewBody);
@@ -156,19 +147,19 @@ export function CheckoutView() {
     voucherCode && preview.isError ? 'Mã giảm giá không hợp lệ hoặc không áp dụng được' : '';
 
   const onSubmitCheckout = () => {
-    if (!addressId) {
+    if (!effectiveAddressId) {
       toast.error('Vui lòng chọn địa chỉ giao hàng');
       return;
     }
-    if (!shippingMethodId) {
+    if (!effectiveShippingMethodId) {
       toast.error('Vui lòng chọn phương thức vận chuyển');
       return;
     }
     // One idempotency key per checkout intent: unchanged payload → same key,
     // so double-clicks and retry-after-network-loss never create two orders.
     const payloadKey = JSON.stringify({
-      addressId,
-      shippingMethodId,
+      addressId: effectiveAddressId,
+      shippingMethodId: effectiveShippingMethodId,
       voucherCode,
       paymentMethod,
       note: note.trim(),
@@ -179,8 +170,8 @@ export function CheckoutView() {
     }
     checkout.mutate(
       {
-        addressId,
-        shippingMethodId,
+        addressId: effectiveAddressId,
+        shippingMethodId: effectiveShippingMethodId,
         voucherCode,
         paymentMethod,
         note: note.trim() || undefined,
@@ -271,7 +262,7 @@ export function CheckoutView() {
                       <label
                         className={cn(
                           'flex h-full cursor-pointer gap-3 rounded-2xl border p-4 transition-all',
-                          addressId === addr.id
+                          effectiveAddressId === addr.id
                             ? 'border-emerald-600 bg-emerald-50/50 ring-2 ring-emerald-500/20 shadow-sm'
                             : 'border-slate-200 hover:border-slate-300 bg-white',
                         )}
@@ -279,7 +270,7 @@ export function CheckoutView() {
                         <input
                           type="radio"
                           name="address"
-                          checked={addressId === addr.id}
+                          checked={effectiveAddressId === addr.id}
                           onChange={() => setAddressId(addr.id)}
                           className="mt-0.5 h-4 w-4 accent-emerald-600"
                           aria-label={`Địa chỉ ${addr.fullName}`}
@@ -325,7 +316,7 @@ export function CheckoutView() {
                       <label
                         className={cn(
                           'flex cursor-pointer items-center justify-between gap-3 rounded-2xl border p-4 transition-all',
-                          shippingMethodId === method.id
+                          effectiveShippingMethodId === method.id
                             ? 'border-emerald-600 bg-emerald-50/50 ring-2 ring-emerald-500/20 shadow-sm'
                             : 'border-slate-200 hover:border-slate-300 bg-white',
                         )}
@@ -334,7 +325,7 @@ export function CheckoutView() {
                           <input
                             type="radio"
                             name="shipping"
-                            checked={shippingMethodId === method.id}
+                            checked={effectiveShippingMethodId === method.id}
                             onChange={() => setShippingMethodId(method.id)}
                             className="h-4 w-4 accent-emerald-600"
                             aria-label={method.name}
@@ -476,7 +467,7 @@ export function CheckoutView() {
                 size="lg"
                 className="w-full shadow-lg shadow-accent-500/25"
                 loading={checkout.isPending}
-                disabled={!addressId || !shippingMethodId || (preview.isPending && !preview.data)}
+                disabled={!effectiveAddressId || !effectiveShippingMethodId || (preview.isPending && !preview.data)}
                 onClick={onSubmitCheckout}
               >
                 <Lock className="mr-1.5 h-4 w-4" /> Đặt hàng an toàn

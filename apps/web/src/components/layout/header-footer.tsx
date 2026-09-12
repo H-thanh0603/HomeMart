@@ -29,33 +29,37 @@ import { cn } from '@/lib/utils';
 function SearchBar() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [q, setQ] = useState('');
+  const urlQ = searchParams.get('q') ?? '';
 
-  useEffect(() => {
-    setQ(searchParams.get('q') ?? '');
-  }, [searchParams]);
-
-  const onSubmit = (e: React.FormEvent) => {
+  const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const query = q.trim();
+    const query = (new FormData(e.currentTarget).get('q') as string | null)?.trim() ?? '';
     router.push(query ? `/products?q=${encodeURIComponent(query)}` : '/products');
   };
 
   return (
     <div className="relative hidden flex-1 max-w-xl md:block">
       <form onSubmit={onSubmit} role="search" className="relative">
+        {/* key=urlQ: input reset khi URL q thay đổi (uncontrolled, không cần effect sync) */}
         <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
+          key={urlQ}
+          name="q"
+          defaultValue={urlQ}
           placeholder="Tìm kiếm dụng cụ nhà bếp, thiết bị điện máy, đồ gia dụng..."
           aria-label="Tìm kiếm sản phẩm"
           className="w-full rounded-2xl border border-emerald-100 bg-white py-2.5 pl-11 pr-10 text-sm text-emerald-950 placeholder:text-emerald-800/60 shadow-inner transition-all duration-200 focus:border-primary-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-primary-500/15"
         />
         <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-emerald-700" />
-        {q && (
+        {urlQ && (
           <button
             type="button"
-            onClick={() => setQ('')}
+            onClick={(e) => {
+              const input = e.currentTarget.parentElement?.querySelector('input');
+              if (input) {
+                input.value = '';
+                input.focus();
+              }
+            }}
             className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-emerald-700 hover:bg-emerald-100"
             aria-label="Xóa từ khóa"
           >
@@ -70,6 +74,7 @@ function SearchBar() {
 function HeaderActions() {
   // ponytail: store persist localStorage — SSR render user=null/count=0, client rehydrate trước hydration → mismatch. Gate bằng mounted; account pages đã gate bằng `hydrated`, đây chỗ duy nhất còn sót.
   const [mounted, setMounted] = useState(false);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- hydration gate, chỉ chạy 1 lần sau mount
   useEffect(() => setMounted(true), []);
   const authUser = useAuthStore((s) => s.user);
   const cartCount = useCartStore((s) => s.count);
@@ -353,6 +358,7 @@ export function MobileBottomNav() {
   const pathname = usePathname();
   // ponytail: same mismatch — SSR count=0, client có giá trị persist. Gate bằng mounted.
   const [mounted, setMounted] = useState(false);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- hydration gate, chỉ chạy 1 lần sau mount
   useEffect(() => setMounted(true), []);
   const persistedCount = useCartStore((s) => s.count);
   const cartCount = mounted ? persistedCount : 0;
