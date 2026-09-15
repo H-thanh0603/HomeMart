@@ -3,8 +3,8 @@
 E-commerce production-ready bán đồ gia dụng — Next.js + NestJS + PostgreSQL + Redis.
 
 ## Tech stack
-- **API:** NestJS 10, Prisma 5, JWT (access + refresh rotation), RBAC, Swagger tại `/api/docs`
-- **Web:** Next.js 14, TailwindCSS, TanStack Query, Zustand, React Hook Form + Zod
+- **API:** NestJS 12, Prisma 7, JWT (access + refresh rotation), RBAC, Swagger tại `/api/docs`
+- **Web:** Next.js 16, TailwindCSS, TanStack Query, Zustand, React Hook Form + Zod
 - **Infra:** PostgreSQL 16, Redis 7, Docker Compose
 
 ## Quick start

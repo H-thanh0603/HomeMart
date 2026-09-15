@@ -97,6 +97,13 @@ jobs:
       - name: Run all API tests
         run: npm test -w apps/api
 
+      - name: Run API E2E tests
+        run: npm run test:e2e -w apps/api
+
+      - name: Dependency audit (high+)
+        run: npm audit --omit=dev --audit-level=high
+        continue-on-error: true
+
   # Build và push image lên GHCR trên main. Deploy vẫn là bước thủ công
   # (docker compose pull + up -d) theo docs/deployment.md.
   docker:
