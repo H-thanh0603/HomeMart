@@ -1,4 +1,4 @@
-import { BadGatewayException, Body, Controller, Get, Param, Post, RawBodyRequest, Req } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Post, RawBodyRequest, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
 import { createHmac, timingSafeEqual } from 'crypto';
@@ -63,16 +63,18 @@ export class PaymentsController {
 
   private verifyStripeSignature(header: string | undefined, rawBody: string) {
     const secret = getEnv().STRIPE_WEBHOOK_SECRET;
-    if (!secret || !header) throw new BadGatewayException('Missing webhook secret or signature');
+    // 400 (not 502): an unverifiable webhook is a bad request from the
+    // caller, not a failure of an upstream gateway we proxied to.
+    if (!secret || !header) throw new BadRequestException('Missing webhook secret or signature');
     const parts = Object.fromEntries(header.split(',').map((kv) => kv.split('=') as [string, string]));
-    if (!parts.t || !parts.v1) throw new BadGatewayException('Malformed signature');
+    if (!parts.t || !parts.v1) throw new BadRequestException('Malformed signature');
     // Replay window: reject events older than 5 minutes
     if (Math.abs(Date.now() / 1000 - Number(parts.t)) > 300) {
-      throw new BadGatewayException('Signature timestamp outside tolerance');
+      throw new BadRequestException('Signature timestamp outside tolerance');
     }
     const expected = createHmac('sha256', secret).update(`${parts.t}.${rawBody}`).digest('hex');
     const a = Buffer.from(expected);
     const b = Buffer.from(parts.v1);
-    if (a.length !== b.length || !timingSafeEqual(a, b)) throw new BadGatewayException('Invalid Stripe signature');
+    if (a.length !== b.length || !timingSafeEqual(a, b)) throw new BadRequestException('Invalid Stripe signature');
   }
 }
