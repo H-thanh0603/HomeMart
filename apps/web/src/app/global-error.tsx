@@ -1,28 +1,10 @@
 'use client';
 
-/**
- * Last-resort boundary: fires when the root layout itself throws.
- * Must render its own <html>/<body> because the root layout is unavailable.
- *
- * NOTE: this is a minimal static shell. It has NO React hooks — any hook
- * call (useState/useEffect/etc.) crashes the static prerender pass of
- * /_global-error in Next.js 16 with "Cannot read properties of null
- * (reading 'useContext')".
- *
- * Error details are never leaked to users; correlation happens via pino
- * server logs using the framework digest.
- */
-export default function GlobalError({
-  error,
-  reset,
-}: {
-  error: Error & { digest?: string };
-  reset: () => void;
-}) {
-  // Suppress unused-parameter warnings — these props are wired by Next.js only
-  // in the client-side boundary, not during the static build pass.
-  void error;
-  void reset;
+export default function GlobalError(props) {
+  // Keep the component minimal for the static build pass.
+  // Only render a static branded 500 page shell — no interactivity needed
+  // here (users just F5 to recover).
+  void props;
 
   return (
     <html lang="vi">
