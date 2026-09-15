@@ -87,16 +87,19 @@ export default function AdminOpsPage() {
             onClick={async () => {
               try {
                 const r = await reconcile.mutateAsync();
-                const mismatches =
-                  r && typeof r === 'object' && 'mismatches' in r
-                    ? (r as { mismatches: unknown[] }).mismatches?.length
+                // Service returns { mismatched: number, details[] } (ops page
+                // previously read a nonexistent `mismatches` array → always
+                // fell through to the generic message).
+                const count =
+                  r && typeof r === 'object' && 'mismatched' in r
+                    ? (r as { mismatched: number }).mismatched
                     : undefined;
                 setReconcileResult(
-                  mismatches == null
+                  count == null
                     ? 'Đã chạy xong — xem kết quả chi tiết trong logs API.'
-                    : mismatches === 0
+                    : count === 0
                       ? 'Đối soát sạch — không có lệch.'
-                      : `Phát hiện ${mismatches} lệch — kiểm tra logs API để xử lý.`,
+                      : `Phát hiện ${count} lệch — kiểm tra logs API để xử lý.`,
                 );
               } catch (e) {
                 setReconcileResult(`Lỗi: ${(e as Error).message}`);
