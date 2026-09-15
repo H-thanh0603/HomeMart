@@ -75,6 +75,14 @@ services:
       PGPASSWORD: ${POSTGRES_PASSWORD}
       PGDATABASE: ${POSTGRES_DB}
       KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      # Offsite copy (R2/S3): để trống = chỉ giữ local (dev OK). Production
+      # điền 5 biến này để mỗi bản dump rời khỏi máy chủ ngay sau khi tạo.
+      BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:-}
+      BACKUP_S3_ACCESS_KEY: ${BACKUP_S3_ACCESS_KEY:-}
+      BACKUP_S3_SECRET_KEY: ${BACKUP_S3_SECRET_KEY:-}
+      BACKUP_S3_PREFIX: ${BACKUP_S3_PREFIX:-homemart}
+      BACKUP_S3_REGION: ${BACKUP_S3_REGION:-auto}
     volumes:
       - ./docker/backup-job.sh:/etc/periodic/daily/backup:ro
       - ./backups:/backups
