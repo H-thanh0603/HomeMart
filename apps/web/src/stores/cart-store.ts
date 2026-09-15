@@ -1,7 +1,6 @@
 'use client';
 
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 
 interface CartState {
   /** Số lượng sản phẩm trong giỏ — mirror hiển thị trên header. */
@@ -9,12 +8,13 @@ interface CartState {
   setCount: (count: number) => void;
 }
 
-export const useCartStore = create<CartState>()(
-  persist(
-    (set) => ({
-      count: 0,
-      setCount: (count) => set({ count }),
-    }),
-    { name: 'homemart-cart-count' },
-  ),
-);
+/**
+ * In-memory only: a persisted badge count goes stale (server-side cart
+ * expiry, items removed on another device) and shows a wrong number until
+ * the user visits /cart. Providers re-syncs it from the server on boot.
+ */
+export const useCartStore = create<CartState>()((set) => ({
+  count: 0,
+  setCount: (count) => set({ count }),
+}));
+

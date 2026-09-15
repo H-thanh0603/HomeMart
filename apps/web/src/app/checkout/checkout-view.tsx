@@ -17,7 +17,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth-store';
-import { postData } from '@/lib/api';
+import { ApiError, postData } from '@/lib/api';
 import {
   useAddresses,
   useCart,
@@ -143,8 +143,16 @@ export function CheckoutView() {
     setVoucherCode(code.toUpperCase());
   };
 
+  // Only blame the voucher when the preview failed with a business error
+  // (400/409/422 = invalid code / conditions). Network or auth failures
+  // would otherwise be misreported as "mã giảm giá không hợp lệ".
+  const previewError = preview.error as (ApiError & { status?: number }) | null;
+  const isBusinessError =
+    previewError?.status === 400 || previewError?.status === 409 || previewError?.status === 422;
   const voucherError =
-    voucherCode && preview.isError ? 'Mã giảm giá không hợp lệ hoặc không áp dụng được' : '';
+    voucherCode && preview.isError && isBusinessError
+      ? 'Mã giảm giá không hợp lệ hoặc không áp dụng được'
+      : '';
 
   const onSubmitCheckout = () => {
     if (!effectiveAddressId) {
