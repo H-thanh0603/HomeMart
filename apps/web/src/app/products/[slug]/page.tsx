@@ -1,3 +1,4 @@
+import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { ProductDetail } from './product-detail';
 import { API_BASE_URL } from '@/lib/api';
@@ -6,16 +7,15 @@ import { productJsonLd, breadcrumbJsonLd } from '@/lib/schema';
 import { JsonLd } from '@/components/json-ld';
 
 async function getProduct(slug: string): Promise<Product | null> {
-  try {
-    const res = await fetch(`${API_BASE_URL}/products/${slug}`, {
-      next: { revalidate: 60 },
-    });
-    if (!res.ok) return null;
-    const json = (await res.json()) as ApiEnvelope<Product>;
-    return json.data ?? null;
-  } catch {
-    return null;
-  }
+  // Network/5xx failures propagate to the error boundary (retryable);
+  // only a real 404 means "product does not exist" → not-found page.
+  const res = await fetch(`${API_BASE_URL}/products/${slug}`, {
+    next: { revalidate: 60 },
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Product API error ${res.status}`);
+  const json = (await res.json()) as ApiEnvelope<Product>;
+  return json.data ?? null;
 }
 
 export async function generateMetadata({
@@ -54,7 +54,8 @@ export default async function ProductPage({
 }) {
   const { slug } = await params;
   const initial = await getProduct(slug);
-  if (!initial) return null;
+  // Unknown slug → proper 404 page (previously rendered a blank page).
+  if (!initial) notFound();
 
   const availableStock = initial.inventory?.availableStock;
   const crumbs = breadcrumbJsonLd([
