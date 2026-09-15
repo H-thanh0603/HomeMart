@@ -1,4 +1,4 @@
-import { Body, Controller, ForbiddenException, Get, Param, Patch, Post, Query, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Body, Controller, ForbiddenException, Get, Param, Patch, Post, Query, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { memoryStorage } from 'multer';
@@ -135,7 +135,7 @@ export class AdminOrdersController {
     @UploadedFile() file: Express.Multer.File | undefined,
     @Body() dto: ReconcileReportDto,
   ) {
-    if (!file?.buffer?.length) throw new ForbiddenException('No file provided');
+    if (!file?.buffer?.length) throw new BadRequestException('No file provided');
     return this.reconcileService.reconcileWithGatewayReport(dto.provider, file.buffer.toString('utf8'));
   }
 }
