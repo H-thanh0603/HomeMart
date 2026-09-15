@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import {
   Flame,
   Heart,
@@ -89,6 +89,27 @@ function HeaderActions() {
     });
   };
 
+  // Menu tài khoản: click-to-open (hover-only trước đây không dùng được với
+  // bàn phím / màn hình cảm ứng), đóng khi click ngoài hoặc Escape.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [menuOpen]);
+
   return (
     <div className="flex items-center gap-1.5 sm:gap-3">
       <Link
@@ -116,10 +137,12 @@ function HeaderActions() {
       </Link>
 
       {user ? (
-        <div className="group relative">
+        <div className="relative" ref={menuRef}>
           <button
+            onClick={() => setMenuOpen((v) => !v)}
             className="flex h-10 items-center gap-2 rounded-xl px-2.5 text-sm font-semibold text-slate-800 transition-colors hover:bg-slate-100 hover:text-emerald-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600"
             aria-haspopup="menu"
+            aria-expanded={menuOpen}
           >
             <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-tr from-primary-600 to-emerald-500 text-xs font-bold text-white shadow-sm">
               {user.fullName.charAt(0).toUpperCase()}
@@ -128,7 +151,11 @@ function HeaderActions() {
           </button>
           <div
             role="menu"
-            className="invisible absolute right-0 top-full z-50 w-52 translate-y-2 rounded-2xl bg-white p-1.5 opacity-0 shadow-elevated ring-1 ring-slate-100 transition-all duration-200 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
+            hidden={!menuOpen}
+            className={cn(
+              'absolute right-0 top-full z-50 w-52 rounded-2xl bg-white p-1.5 shadow-elevated ring-1 ring-slate-100 transition-all duration-200',
+              menuOpen ? 'visible translate-y-0 opacity-100' : 'invisible translate-y-2 opacity-0',
+            )}
           >
             <div className="border-b border-slate-100 px-3 py-2">
               <p className="text-xs text-slate-400">Đăng nhập bởi</p>
@@ -136,25 +163,34 @@ function HeaderActions() {
             </div>
             <Link
               href="/account"
+              role="menuitem"
+              onClick={() => setMenuOpen(false)}
               className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 hover:text-emerald-800"
             >
               <UserIcon className="h-4 w-4" /> Tài khoản của tôi
             </Link>
             <Link
               href="/account/orders"
+              role="menuitem"
+              onClick={() => setMenuOpen(false)}
               className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 hover:text-emerald-800"
             >
               <Package className="h-4 w-4" /> Đơn hàng của tôi
             </Link>
             <Link
               href="/account/wishlist"
+              role="menuitem"
+              onClick={() => setMenuOpen(false)}
               className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 hover:text-emerald-800"
             >
               <Heart className="h-4 w-4" /> Yêu thích
             </Link>
             <button
               role="menuitem"
-              onClick={onLogout}
+              onClick={() => {
+                setMenuOpen(false);
+                onLogout();
+              }}
               disabled={logout.isPending}
               className="flex w-full items-center gap-2.5 rounded-xl border-t border-slate-100 px-3 py-2 text-left text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
             >
