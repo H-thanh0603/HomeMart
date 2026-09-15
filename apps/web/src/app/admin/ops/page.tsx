@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { Clock, FileCheck2, Info } from 'lucide-react';
-import { useExpirePending, useReconcile } from '@/hooks/use-admin';
+import { Clock, FileCheck2, Upload } from 'lucide-react';
+import { useExpirePending, useReconcile, useReconcileReport } from '@/hooks/use-admin';
 import { useAuthStore } from '@/stores/auth-store';
 
 export default function AdminOpsPage() {
@@ -11,9 +11,12 @@ export default function AdminOpsPage() {
 
   const expirePending = useExpirePending();
   const reconcile = useReconcile();
+  const report = useReconcileReport();
 
   const [expireResult, setExpireResult] = useState<string | null>(null);
   const [reconcileResult, setReconcileResult] = useState<string | null>(null);
+  const [reportProvider, setReportProvider] = useState<'VNPAY' | 'MOMO'>('VNPAY');
+  const [reportResult, setReportResult] = useState<string | null>(null);
 
   if (!isManager) {
     return (
@@ -117,12 +120,67 @@ export default function AdminOpsPage() {
         )}
       </section>
 
-      <p className="flex items-start gap-2 rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-xs text-slate-500">
-        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-        Upload CSV merchant portal (VNPay/MoMo) đối soát theo file — dùng API{' '}
-        <code className="rounded bg-white px-1">POST /admin/orders/ops/reconcile-report</code>{' '}
-        (swagger: /api/docs). Nút upload sẽ thêm khi có merchant thật.
-      </p>
+      <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="flex items-center gap-2 text-sm font-bold text-slate-900">
+              <Upload className="h-4 w-4 text-emerald-600" /> Đối soát CSV merchant portal
+            </h3>
+            <p className="mt-1 max-w-xl text-sm text-slate-500">
+              Upload file CSV export từ portal VNPay/MoMo — server so providerRef +
+              amount với DB, trả về matched / mismatched / missingInDb.
+            </p>
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <select
+              value={reportProvider}
+              onChange={(e) => setReportProvider(e.target.value as 'VNPAY' | 'MOMO')}
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700"
+              aria-label="Cổng thanh toán"
+            >
+              <option value="VNPAY">VNPay</option>
+              <option value="MOMO">MoMo</option>
+            </select>
+            <label className="cursor-pointer rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">
+              {report.isPending ? 'Đang đối soát…' : 'Chọn CSV & đối soát'}
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                disabled={report.isPending}
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = '';
+                  if (!file) return;
+                  try {
+                    const r = (await report.mutateAsync({ provider: reportProvider, file })) as {
+                      rows?: number;
+                      matched?: number;
+                      mismatched?: { providerRef: string; dbAmount: number; reportAmount: number }[];
+                      missingInDb?: { providerRef: string }[];
+                    };
+                    const mm = r.mismatched ?? [];
+                    const missing = r.missingInDb ?? [];
+                    setReportResult(
+                      `Đã soát ${r.rows ?? '?'} dòng: ${r.matched ?? '?'} khớp, ${mm.length} lệch amount/status, ${missing.length} thiếu trong DB.` +
+                        (mm.length
+                          ? ` Lệch: ${mm.slice(0, 5).map((m) => `${m.providerRef} (DB ${m.dbAmount} vs file ${m.reportAmount})`).join('; ')}${mm.length > 5 ? `… +${mm.length - 5} dòng` : ''}`
+                          : ''),
+                    );
+                  } catch (err) {
+                    setReportResult(`Lỗi: ${(err as Error).message}`);
+                  }
+                }}
+              />
+            </label>
+          </div>
+        </div>
+        {reportResult && (
+          <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">
+            {reportResult}
+          </p>
+        )}
+      </section>
     </div>
   );
 }

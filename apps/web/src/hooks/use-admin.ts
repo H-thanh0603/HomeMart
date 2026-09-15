@@ -1,7 +1,8 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getData, getPage, patchData, postData } from '@/lib/api';
+import { getData, getPage, patchData, postData, api } from '@/lib/api';
+import type { ApiEnvelope } from '@/lib/types';
 import type {
   AdminOrderDetail,
   AdminOrderListItem,
@@ -102,5 +103,24 @@ export function useExpirePending() {
 export function useReconcile() {
   return useMutation({
     mutationFn: () => postData<Record<string, unknown>>('/admin/orders/ops/reconcile'),
+  });
+}
+
+/** Ops: upload CSV merchant portal (VNPay/MoMo) → đối soát với DB. */
+export function useReconcileReport() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ provider, file }: { provider: 'VNPAY' | 'MOMO'; file: File }) => {
+      const form = new FormData();
+      form.append('provider', provider);
+      form.append('file', file);
+      // multipart: để axios tự set Content-Type + boundary.
+      return api
+        .post<ApiEnvelope<Record<string, unknown>>>('/admin/orders/ops/reconcile-report', form)
+        .then((res) => res.data.data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] });
+    },
   });
 }
