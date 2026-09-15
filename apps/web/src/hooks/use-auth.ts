@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getData, postData } from '@/lib/api';
+import { getData, postData, resetAuthRefresh } from '@/lib/api';
 import type { AuthPayload, User } from '@/lib/types';
 import { useAuthStore } from '@/stores/auth-store';
 
@@ -22,6 +22,8 @@ export function useLogin() {
     mutationFn: (body: { email: string; password: string }) =>
       postData<AuthPayload>('/auth/login', body),
     onSuccess: (payload) => {
+      // A guest session may have latched the refresh latch — clear it.
+      resetAuthRefresh();
       setSession(payload.accessToken, payload.user);
       queryClient.invalidateQueries();
     },
@@ -34,6 +36,7 @@ export function useRegister() {
     mutationFn: (body: { email: string; password: string; fullName: string }) =>
       postData<{ id?: string }>('/auth/register', body),
     onSuccess: () => {
+      resetAuthRefresh();
       queryClient.invalidateQueries({ queryKey: ['me'] });
     },
   });

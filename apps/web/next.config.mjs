@@ -23,9 +23,15 @@ const nextConfig = {
     ];
   },
   images: {
+    // Whitelist: content served by this app + known CDN hosts only. A wildcard
+    // `https://**` would let any free-text URL field (product/brand/category
+    // imageUrl) turn Next's image optimizer into a proxy for arbitrary hosts.
     remotePatterns: [
       { protocol: 'http', hostname: 'localhost' },
-      { protocol: 'https', hostname: '**' },
+      { protocol: 'https', hostname: 'res.cloudinary.com' },
+      { protocol: 'https', hostname: '*.amazonaws.com' },
+      { protocol: 'https', hostname: '*.r2.dev' },
+      { protocol: 'https', hostname: 'images.unsplash.com' },
     ],
     formats: ['image/avif', 'image/webp'],
     dangerouslyAllowSVG: true,

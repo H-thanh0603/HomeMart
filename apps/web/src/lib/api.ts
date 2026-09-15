@@ -7,7 +7,7 @@ import axios, {
   type InternalAxiosRequestConfig,
 } from 'axios';
 import type { ApiEnvelope } from './types';
-import { useAuthStore } from '@/stores/auth-store';
+import { useAuthStore, persistUser } from '@/stores/auth-store';
 
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
@@ -33,18 +33,33 @@ export const api = axios.create({
 });
 
 // ─── Request: gắn Bearer token ───────────────────────────────────────────────
-api.interceptors.request.use((config) => {
-  const token = useAuthStore.getState().accessToken;
-  if (token) {
-    const headers = AxiosHeaders.from(config.headers);
-    headers.set('Authorization', `Bearer ${token}`);
-    config.headers = headers;
-  }
-  return config;
-});
-
-// ─── Response: unwrap envelope + refresh một lần khi 401 ─────────────────────
 let refreshingPromise: Promise<string | null> | null = null;
+/**
+ * Latch: the refresh cookie is absent/invalid (guest or expired session).
+ * Set after one failed refresh so guests don't pay a wasted roundtrip on
+ * every request; reset when a login/register succeeds (response interceptor).
+ */
+let refreshFailed = false;
+
+/**
+ * Silent refresh: exchange the httpOnly `hm_rt` cookie for a fresh access
+ * token. Single-flight — concurrent callers share one request.
+ * Called automatically by the request interceptor when memory is empty
+ * (e.g. right after a full page reload).
+ */
+export function ensureFreshToken(): Promise<string | null> {
+  if (refreshFailed) return Promise.resolve(null);
+  refreshingPromise = refreshingPromise ?? refreshAccessToken();
+  return refreshingPromise;
+}
+
+/**
+ * Called after a successful login/register so a previously failed guest
+ * refresh doesn't block future silent refreshes this session.
+ */
+export function resetAuthRefresh() {
+  refreshFailed = false;
+}
 
 async function refreshAccessToken(): Promise<string | null> {
   const { setSession, clearSession } = useAuthStore.getState();
@@ -59,12 +74,35 @@ async function refreshAccessToken(): Promise<string | null> {
     setSession(payload.accessToken);
     return payload.accessToken;
   } catch {
+    // Cookie invalid/expired — session really is gone. Clear the persisted
+    // profile mirror too (the access token was never persisted).
     clearSession();
+    persistUser(null);
+    refreshFailed = true;
     return null;
   } finally {
     refreshingPromise = null;
   }
 }
+
+api.interceptors.request.use(async (config) => {
+  let token = useAuthStore.getState().accessToken;
+  // Token lives in memory only (see auth-store). After a page reload it is
+  // null until the httpOnly cookie silently restores it. Skip for the refresh
+  // call itself (plain axios — never hits this) and don't spam refresh when
+  // it already failed this session (guest browsing).
+  if (!token && !refreshFailed) {
+    token = await ensureFreshToken();
+  }
+  if (token) {
+    const headers = AxiosHeaders.from(config.headers);
+    headers.set('Authorization', `Bearer ${token}`);
+    config.headers = headers;
+  }
+  return config;
+});
+
+// ─── Response: unwrap envelope + refresh một lần khi 401 ─────────────────────
 
 api.interceptors.response.use(
   (response) => response,
@@ -74,8 +112,7 @@ api.interceptors.response.use(
 
     if (error.response?.status === 401 && original && !original._retried && !isAuthCall) {
       original._retried = true;
-      refreshingPromise = refreshingPromise ?? refreshAccessToken();
-      const newToken = await refreshingPromise;
+      const newToken = await ensureFreshToken();
       if (newToken) {
         const headers = AxiosHeaders.from(original.headers);
         headers.set('Authorization', `Bearer ${newToken}`);
