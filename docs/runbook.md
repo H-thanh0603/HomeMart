@@ -20,10 +20,13 @@ Hoặc dùng UptimeRobot / BetterStack trỏ vào `/api/v1/health` (hoặc `/hea
 
 ```bash
 # 03:00 hằng ngày — đối soát payment vs order (cần ADMIN_TOKEN của MANAGER/ADMIN)
-0 3 * * * root API_URL=http://localhost/api/v1 ADMIN_TOKEN=$(cat /run/secrets/homemart-admin-token) /opt/homemart/docker/cron-ops.sh reconcile
+# LƯU Ý: JWT access hết hạn sau JWT_ACCESS_TTL (mặc định 15m). Cron không thể
+# dùng token cố định — wrapper tự đăng nhập bằng tài khoản ops riêng để lấy
+# token mới mỗi lần chạy (xem OPS_USER_* bên dưới). Đừng paste JWT vào crontab.
+0 3 * * * root API_URL=http://localhost/api/v1 OPS_USER_EMAIL=ops@homemart.vn OPS_USER_PASSWORD='...' /opt/homemart/docker/cron-ops.sh reconcile
 
 # 5 phút 1 lần — hết hạn đơn PENDING quá ORDER_PAYMENT_TIMEOUT_MINUTES, giải phóng kho
-*/5 * * * * root API_URL=http://localhost/api/v1 ADMIN_TOKEN=$(cat /run/secrets/homemart-admin-token) /opt/homemart/docker/cron-ops.sh expire-pending
+*/5 * * * * root API_URL=http://localhost/api/v1 OPS_USER_EMAIL=ops@homemart.vn OPS_USER_PASSWORD='...' /opt/homemart/docker/cron-ops.sh expire-pending
 ```
 Kết quả ghi vào `/var/log/homemart-<task>.log`. Nếu `mismatched > 0`, kiểm tra `audit-log` và báo cáo gateway (VNPay/MoMo CSV).
 
