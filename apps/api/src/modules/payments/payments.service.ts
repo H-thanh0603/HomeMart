@@ -240,7 +240,7 @@ export class PaymentsService {
         this.logger.warn(`Failed expiring order ${order.orderNumber}: ${(e as Error).message}`);
       }
     }
-    return { expired };
+    return { expired, cancelled: expired };
   }
 
   /**
