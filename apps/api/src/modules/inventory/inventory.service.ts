@@ -208,9 +208,11 @@ export class InventoryService {
     });
   }
 
-  listLowStock(threshold?: number) {
+  listLowStock(threshold = 5) {
     return this.prisma.inventory.findMany({
-      where: { availableStock: { lte: threshold ?? undefined } },
+      // Spec inventory-risk: hết hàng trước (stock ASC), mặc định ≤ 5.
+      where: { availableStock: { lte: threshold } },
+      orderBy: { availableStock: 'asc' },
       include: { product: { select: { name: true, sku: true, slug: true } }, variant: true },
     });
   }

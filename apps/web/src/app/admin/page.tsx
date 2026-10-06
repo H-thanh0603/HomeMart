@@ -1,15 +1,20 @@
 'use client';
 
 import Link from 'next/link';
-import { AlertTriangle, Package, ShoppingCart, TrendingUp } from 'lucide-react';
+import { AlertTriangle, Package, ShoppingCart, TrendingUp, Users, ShoppingBag } from 'lucide-react';
 import { useAdminDashboardStats, useLowStock } from '@/hooks/use-admin';
-import { formatCurrency, ORDER_STATUS_LABELS } from '@/lib/utils';
+import { formatCurrency } from '@/lib/utils';
+import { buildAttentions } from '@/lib/admin-helpers';
 import { OrderStatusBadge } from '@/components/ui/badge';
+import { ErrorState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function AdminDashboardPage() {
-  const { data: stats, isLoading } = useAdminDashboardStats();
+  const { data: stats, isLoading, isError, error, refetch } = useAdminDashboardStats();
   const { data: lowStock } = useLowStock();
+
+  // Spec §4 Level 3: dashboard trả lời "có gì cần xử lý ngay?" (logic trong admin-helpers, có test).
+  const attentions = buildAttentions(stats);
 
   const cards = [
     {
@@ -36,11 +41,50 @@ export default function AdminDashboardPage() {
       icon: Package,
       tone: 'bg-amber-50 text-amber-600',
     },
+    {
+      label: 'Khách hàng',
+      value: stats ? String(stats.totalCustomers) : '—',
+      icon: Users,
+      tone: 'bg-violet-50 text-violet-600',
+    },
+    {
+      label: 'Sản phẩm',
+      value: stats ? String(stats.totalProducts) : '—',
+      icon: ShoppingBag,
+      tone: 'bg-slate-100 text-slate-600',
+    },
   ];
 
   return (
     <div className="space-y-8">
       <h2 className="text-base font-bold text-slate-900">Tổng quan</h2>
+
+      {isError && (
+        <ErrorState
+          message={`Không tải được số liệu: ${(error as Error)?.message}`}
+          onRetry={() => refetch()}
+        />
+      )}
+
+      {!isLoading && !isError && attentions.length > 0 && (
+        <section aria-label="Cần xử lý ngay" className="rounded-2xl border border-amber-200/70 bg-amber-50/60 p-4">
+          <h3 className="mb-2 flex items-center gap-1.5 text-sm font-bold text-amber-900">
+            <AlertTriangle className="h-4 w-4" /> Cần xử lý ngay ({attentions.length})
+          </h3>
+          <ul className="flex flex-wrap gap-2">
+            {attentions.map((a) => (
+              <li key={a.key}>
+                <Link
+                  href={a.href}
+                  className="inline-block rounded-xl bg-white px-3 py-1.5 text-xs font-semibold text-amber-900 shadow-sm ring-1 ring-amber-200 hover:bg-amber-100"
+                >
+                  {a.label} →
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {cards.map(({ label, value, icon: Icon, tone }) => (
@@ -127,6 +171,79 @@ export default function AdminDashboardPage() {
           </p>
         )}
       </section>
+
+      {/* Đơn gần đây */}
+      {stats && stats.recentOrders.length > 0 && (
+        <section>
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-bold text-slate-900">Đơn gần đây</h3>
+            <Link href="/admin/orders" className="text-xs font-semibold text-emerald-700 hover:underline">
+              Xem tất cả →
+            </Link>
+          </div>
+          <ul className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+            {stats.recentOrders.slice(0, 5).map((o) => (
+              <li key={o.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                <div className="min-w-0">
+                  <Link href={`/admin/orders/${o.id}`} className="truncate text-sm font-semibold text-emerald-700 hover:underline">
+                    {o.orderNumber}
+                  </Link>
+                  <p className="truncate text-xs text-slate-500">{o.contactName}</p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <OrderStatusBadge status={o.status} />
+                  <span className="text-sm font-bold text-slate-900">{formatCurrency(Number(o.totalAmount))}</span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* Top sản phẩm */}
+        {stats && stats.topProducts.length > 0 && (
+          <section>
+            <h3 className="mb-3 text-sm font-bold text-slate-900">Bán chạy nhất</h3>
+            <ul className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+              {stats.topProducts.slice(0, 5).map((p) => (
+                <li key={p.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                  <Link href={`/products/${p.slug}`} className="min-w-0 truncate text-sm font-semibold text-slate-800 hover:text-emerald-700">
+                    {p.name}
+                  </Link>
+                  <span className="shrink-0 text-xs font-bold text-slate-500">
+                    {p.soldCount} đã bán · {formatCurrency(Number(p.price))}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {/* Voucher đang chạy */}
+        {stats && stats.activeVouchers.length > 0 && (
+          <section>
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-900">Voucher đang chạy</h3>
+              <Link href="/admin/vouchers" className="text-xs font-semibold text-emerald-700 hover:underline">
+                Quản lý →
+              </Link>
+            </div>
+            <ul className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
+              {(stats.activeVouchers as { code: string; usedCount: number; usageLimit?: number | null }[]).slice(0, 5).map((v) => (
+                <li key={v.code} className="flex items-center justify-between gap-3 px-4 py-3">
+                  <span className="rounded-lg bg-emerald-50 px-2 py-1 font-mono text-xs font-bold text-emerald-700">
+                    {v.code}
+                  </span>
+                  <span className="text-xs text-slate-500">
+                    đã dùng {v.usedCount}{v.usageLimit ? `/${v.usageLimit}` : ''}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+      </div>
     </div>
   );
 }

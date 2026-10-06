@@ -1,12 +1,15 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Search } from 'lucide-react';
 import { useAdminOrders } from '@/hooks/use-admin';
 import { formatCurrency, formatDate, ORDER_STATUS_LABELS } from '@/lib/utils';
+import { FilterChips } from '@/components/admin/filter-chips';
+import { useSlashFocus } from '@/components/admin/use-slash-focus';
 import { OrderStatusBadge } from '@/components/ui/badge';
+import { EmptyState, ErrorState } from '@/components/ui/empty-state';
 import { Pagination } from '@/components/ui/pagination';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -21,8 +24,10 @@ export default function AdminOrdersPage() {
   const page = Number(searchParams.get('page') ?? '1') || 1;
 
   const [searchInput, setSearchInput] = useState(q);
+  const searchRef = useRef<HTMLInputElement>(null);
+  useSlashFocus(searchRef);
 
-  const { data, isLoading, isError, error } = useAdminOrders({
+  const { data, isLoading, isError, error, refetch } = useAdminOrders({
     page,
     ...(status ? { status } : {}),
     ...(q ? { q } : {}),
@@ -60,9 +65,10 @@ export default function AdminOrdersPage() {
           >
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
+              ref={searchRef}
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Mã đơn, tên, SĐT…"
+              placeholder="Mã đơn, tên, SĐT…  ( / )"
               className="h-10 w-56 rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm shadow-sm outline-none focus:border-emerald-400"
             />
           </form>
@@ -81,10 +87,19 @@ export default function AdminOrdersPage() {
         </div>
       </div>
 
+      <FilterChips
+        chips={[
+          ...(q ? [{ key: 'q', label: `"${q}"`, onRemove: () => { setSearchInput(''); updateQuery({ q: null, page: null }); } }] : []),
+          ...(status ? [{ key: 'status', label: `Trạng thái: ${ORDER_STATUS_LABELS[status] ?? status}`, onRemove: () => updateQuery({ status: null, page: null }) }] : []),
+        ]}
+        onClearAll={() => { setSearchInput(''); updateQuery({ q: null, status: null, page: null }); }}
+      />
+
       {isError && (
-        <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
-          Không tải được danh sách: {(error as Error).message}
-        </p>
+        <ErrorState
+          message={`Không tải được danh sách: ${(error as Error).message}`}
+          onRetry={() => refetch()}
+        />
       )}
 
       <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
@@ -157,10 +172,15 @@ export default function AdminOrdersPage() {
                       </tr>
                     );
                   })}
-              {!isLoading && orders.length === 0 && (
+              {!isLoading && orders.length === 0 && !isError && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-sm text-slate-500">
-                    Không có đơn hàng nào khớp bộ lọc.
+                  <td colSpan={6} className="px-4 py-8">
+                    <EmptyState
+                      title={q || status ? 'Không có đơn hàng nào khớp bộ lọc' : 'Chưa có đơn hàng nào'}
+                      description={q || status ? 'Thử bỏ bớt điều kiện tìm kiếm / lọc.' : undefined}
+                      actionLabel={q || status ? 'Xóa bộ lọc' : undefined}
+                      onAction={() => { setSearchInput(''); updateQuery({ q: null, status: null, page: null }); }}
+                    />
                   </td>
                 </tr>
               )}

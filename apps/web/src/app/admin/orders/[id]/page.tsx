@@ -13,13 +13,14 @@ import {
 import { useAuthStore } from '@/stores/auth-store';
 import { formatCurrency, formatDate, ORDER_STATUS_LABELS } from '@/lib/utils';
 import { OrderStatusBadge } from '@/components/ui/badge';
+import { ErrorState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { MANAGER_ONLY_ACTIONS, NEXT_STATUS_OPTIONS } from '@/lib/admin-types';
 
 export default function AdminOrderDetailPage() {
   const params = useParams<{ id: string }>();
   const orderId = params.id;
-  const { data: order, isLoading, isError, error } = useAdminOrder(orderId);
+  const { data: order, isLoading, isError, error, refetch } = useAdminOrder(orderId);
   const { user } = useAuthStore();
 
   const updateStatus = useUpdateOrderStatus();
@@ -53,9 +54,10 @@ export default function AdminOrderDetailPage() {
     return (
       <div className="space-y-4">
         <BackLink />
-        <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
-          Không tải được đơn: {(error as Error)?.message}
-        </p>
+        <ErrorState
+          message={`Không tải được đơn: ${(error as Error)?.message}`}
+          onRetry={() => refetch()}
+        />
       </div>
     );
   }

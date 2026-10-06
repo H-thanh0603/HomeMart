@@ -10,7 +10,7 @@ export class AdminService {
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    const [todayRevenue, monthRevenue, totalOrders, pendingOrders, totalCustomers, totalProducts, activeVouchers, statusBreakdown] =
+    const [todayRevenue, monthRevenue, totalOrders, pendingOrders, totalCustomers, totalProducts, activeVouchers, statusBreakdown, lowStockCount] =
       await this.prisma.$transaction([
         this.prisma.order.aggregate({
           where: { createdAt: { gte: startOfDay }, status: { notIn: ['CANCELLED'] }, deletedAt: null },
@@ -31,10 +31,13 @@ export class AdminService {
           orderBy: { usedCount: 'desc' },
         }),
         this.prisma.order.groupBy({ by: ['status'], where: { deletedAt: null }, _count: true, orderBy: { _count: { status: 'desc' } } } as never),
+        // Spec inventory-risk: count thật (không phải length của preview take 20).
+        this.prisma.inventory.count({ where: { availableStock: { lte: 5 } } }),
       ]);
 
     const lowStock = await this.prisma.inventory.findMany({
       where: { availableStock: { lte: 5 } },
+      orderBy: { availableStock: 'asc' },
       take: 20,
       include: {
         product: { select: { id: true, name: true, sku: true, slug: true } },
@@ -66,7 +69,7 @@ export class AdminService {
       pendingOrders,
       totalCustomers,
       totalProducts,
-      lowStockCount: lowStock.length,
+      lowStockCount,
       lowStock,
       topProducts,
       recentOrders,
@@ -77,11 +80,12 @@ export class AdminService {
 
   /** Revenue grouped by day/month for charts. */
   async revenueReport(from: string, to: string, groupBy: 'day' | 'month') {
-    const fmt = groupBy === 'month'
-      ? `date_trunc('month', "createdAt")`
-      : `date_trunc('day', "createdAt")`;
-    const rows = await this.prisma.$queryRaw<{ period: Date; revenue: bigint; orders: bigint }[]>`
-      SELECT ${fmt} AS period,
+    // to_char → chuỗi ISO cố định: PrismaPg driver trả timestamp raw dạng
+    // string không parse được ("YYYY-MM-DD HH:mm:ss"), nên format ngay trong SQL.
+    const trunc = groupBy === 'month' ? 'month' : 'day';
+    const fmt = groupBy === 'month' ? 'YYYY-MM' : 'YYYY-MM-DD';
+    const rows = await this.prisma.$queryRaw<{ period: string; revenue: bigint; orders: bigint }[]>`
+      SELECT to_char(date_trunc(${trunc}, "createdAt"), ${fmt}) AS period,
              SUM("totalAmount")::bigint AS revenue,
              COUNT(*)::bigint AS orders
       FROM orders
@@ -89,7 +93,7 @@ export class AdminService {
         AND status NOT IN ('CANCELLED') AND "deletedAt" IS NULL
       GROUP BY 1 ORDER BY 1`;
     return rows.map((r) => ({
-      period: r.period.toISOString().slice(0, groupBy === 'month' ? 7 : 10),
+      period: r.period,
       revenue: Number(r.revenue),
       orders: Number(r.orders),
     }));
