@@ -45,9 +45,13 @@ async function bootstrap() {
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
   });
 
-  // Behind nginx/reverse proxy: trust exactly one hop so req.ip is the real
-  // client IP — without this, ThrottlerGuard rate-limits everyone as one bucket.
-  app.getHttpAdapter().getInstance().set('trust proxy', 1);
+  // Trust exactly N reverse-proxy hops (TRUSTED_PROXY_HOPS, default 1 for the
+  // bundled nginx). Express then derives req.ip from the RIGHT-MOST untrusted
+  // X-Forwarded-For entry — a client-supplied XFF header cannot spoof its own
+  // IP past a correctly configured proxy chain, which is what rate limiting
+  // keys on. Setting this higher than the real hop count silently re-opens
+  // the spoofing hole, so it is a validated, explicit env value.
+  app.getHttpAdapter().getInstance().set('trust proxy', env.TRUSTED_PROXY_HOPS === 0 ? false : env.TRUSTED_PROXY_HOPS);
 
   app.setGlobalPrefix('api/v1');
   app.enableShutdownHooks();

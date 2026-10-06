@@ -12,6 +12,7 @@ import { AuditInterceptor } from './modules/admin/audit.interceptor';
 import { AdminController } from './modules/admin/admin.controller';
 import { AdminOrdersController } from './modules/admin/admin-orders.controller';
 import { AdminInventoryController } from './modules/admin/admin-inventory.controller';
+import { AdminUsersController } from './modules/admin/admin-users.controller';
 import { AdminService } from './modules/admin/admin.service';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { CartModule } from './modules/cart/cart.module';
@@ -51,7 +52,7 @@ setGlobalRateLimit(getEnv().RATE_LIMIT_PER_MIN);
     NotificationsModule,
     UploadsModule,
   ],
-  controllers: [AdminController, AdminOrdersController, AdminInventoryController],
+  controllers: [AdminController, AdminOrdersController, AdminInventoryController, AdminUsersController],
   providers: [
     AdminService,
     // Global guards: rate limit (Redis INCR, fail-open khi Redis chết) →

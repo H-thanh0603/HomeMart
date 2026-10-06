@@ -1,6 +1,7 @@
 import { CanActivate, ExecutionContext, HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { RedisService } from '../../infra/redis.service';
+import { AlertsService } from '../observability/alerts.service';
 
 /**
  * Lightweight rate-limit guard — replaces @nestjs/throttler, whose 6.5 CJS
@@ -32,6 +33,7 @@ export class RateLimitGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly redis: RedisService,
+    private readonly alerts: AlertsService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -54,7 +56,12 @@ export class RateLimitGuard implements CanActivate {
     const key = `rl:${route}:${ip}`;
 
     const client = this.redis.client;
-    if (client.status !== 'ready') return true; // degraded fail-open
+    if (client.status !== 'ready') {
+      // Degraded fail-open: rate limiting is OFF. Alert (throttled) so an
+      // operator knows the perimeter is open during a Redis outage.
+      this.alerts.alertThrottled('rate-limit-redis-down', 'Redis unavailable — rate limiting is failing open (no protection)');
+      return true;
+    }
 
     try {
       const hits = await client.incr(key);
@@ -65,11 +72,22 @@ export class RateLimitGuard implements CanActivate {
       return true;
     } catch (e) {
       if (e instanceof HttpException) throw e;
-      return true; // Redis hiccup mid-request: don't block the customer
+      // Redis hiccup mid-request: don't block the customer, but don't pretend
+      // the request was rate-limited either.
+      this.alerts.alertThrottled('rate-limit-error', `Rate-limit backend error: ${(e as Error).message}`);
+      return true;
     }
   }
 
-  private clientIp(request: { ip?: string; headers?: Record<string, unknown> }): string {
-    return request.ip ?? String(request.headers?.['x-forwarded-for'] ?? 'unknown');
+  /**
+   * Rate-limit identity is ALWAYS req.ip. req.ip is trustworthy only when the
+   * proxy chain is correctly configured (main.ts: trust proxy = TRUSTED_PROXY_HOPS),
+   * because Express then ignores client-supplied X-Forwarded-For entries beyond
+   * the trusted hops. We deliberately do NOT read X-Forwarded-For directly: an
+   * attacker could then rotate the header per request and mint an unlimited
+   * number of buckets, defeating the limiter entirely.
+   */
+  private clientIp(request: { ip?: string; socket?: { remoteAddress?: string } }): string {
+    return request.ip ?? request.socket?.remoteAddress ?? 'unknown';
   }
 }

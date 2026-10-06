@@ -52,6 +52,19 @@ export class ModerateReviewDto {
 export class AdminReviewsController {
   constructor(private readonly reviewsService: ReviewsService) {}
 
+  @Get()
+  list(
+    @Query('status') status?: string,
+    @Query('page') page = '1',
+    @Query('limit') limit = '20',
+  ) {
+    return this.reviewsService.listForAdmin(
+      status,
+      clampPage(page),
+      clampLimit(limit, 50),
+    );
+  }
+
   @Patch(':id/moderate') @Audit('review.moderate', 'Review')
   moderate(@Param('id') id: string, @Body() dto: ModerateReviewDto) {
     return this.reviewsService.moderate(id, dto.status);

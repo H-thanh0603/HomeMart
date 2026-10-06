@@ -7,6 +7,13 @@ const envSchema = z.object({
   WEB_URL: z.string().default('http://localhost:3000'),
   /** Public base URL of THIS api — used for gateway IPN/webhook callbacks. */
   API_PUBLIC_URL: z.string().default('http://localhost:4000'),
+  /**
+   * Number of trusted reverse-proxy hops in front of the API. Express uses this
+   * to compute req.ip from X-Forwarded-For. MUST be the real number of proxies:
+   * too high and a client can spoof its own IP (defeating rate limiting).
+   * 1 = the bundled nginx only. 0 = no proxy (direct exposure).
+   */
+  TRUSTED_PROXY_HOPS: z.coerce.number().int().min(0).max(4).default(1),
 
   DATABASE_URL: z.string(),
   REDIS_URL: z.string().default('redis://localhost:6379'),
@@ -79,6 +86,16 @@ const envSchema = z.object({
   // Observability
   SENTRY_DSN: z.string().optional(),
   METRICS_ENABLED: z.coerce.boolean().default(false),
+
+  // ─── Alerting ───
+  // At least one channel is required in production (see guard below): an
+  // outage nobody is told about is an outage nobody fixes.
+  ALERT_WEBHOOK_URL: z.string().optional().default(''),
+  ALERT_SLACK_WEBHOOK_URL: z.string().optional().default(''),
+  ALERT_TELEGRAM_BOT_TOKEN: z.string().optional().default(''),
+  ALERT_TELEGRAM_CHAT_ID: z.string().optional().default(''),
+  // Interval (seconds) the API flushes queued ops alerts to the channels above.
+  ALERT_FLUSH_INTERVAL_SECONDS: z.coerce.number().int().min(10).default(120),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -143,6 +160,18 @@ export function getEnv(): Env {
           missing.push(`  - ${key} still points to a sandbox gateway while production credentials are configured`);
         }
       }
+      // Monitoring: a production deployment with no way to shout is a
+      // deployment whose outages you learn about from customers.
+      const hasAlertChannel =
+        Boolean(env.ALERT_WEBHOOK_URL) ||
+        Boolean(env.ALERT_SLACK_WEBHOOK_URL) ||
+        (Boolean(env.ALERT_TELEGRAM_BOT_TOKEN) && Boolean(env.ALERT_TELEGRAM_CHAT_ID));
+      if (!hasAlertChannel && !env.SENTRY_DSN) {
+        missing.push(
+          '  - no alert channel configured: set ALERT_WEBHOOK_URL (or Slack/Telegram) or SENTRY_DSN so incidents are never silent',
+        );
+      }
+
       if (missing.length > 0) {
         throw new Error(`Refusing to start in production with incomplete configuration:\n${missing.join('\n')}`);
       }

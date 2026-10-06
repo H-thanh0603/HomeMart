@@ -84,7 +84,7 @@ export const NEXT_STATUS_OPTIONS: Record<string, string[]> = {
   PACKING: ['SHIPPED', 'CANCELLED'],
   SHIPPED: ['DELIVERED', 'RETURN_REQUESTED'],
   DELIVERED: ['COMPLETED', 'RETURN_REQUESTED'],
-  RETURN_REQUESTED: ['RETURNED', 'CANCELLED'],
+  RETURN_REQUESTED: ['RETURNED', 'COMPLETED', 'CANCELLED'],
   RETURNED: ['REFUNDED'],
   REFUNDED: [],
   COMPLETED: [],
@@ -93,3 +93,150 @@ export const NEXT_STATUS_OPTIONS: Record<string, string[]> = {
 
 /** Action cần quyền MANAGER+ (server enforce, UI chỉ disable). */
 export const MANAGER_ONLY_ACTIONS = ['RETURNED', 'REFUNDED'];
+
+// ─── Catalog / products ──────────────────────────────────────────────
+export interface AdminProduct {
+  id: string;
+  sku: string;
+  name: string;
+  slug: string;
+  price: number;
+  compareAtPrice?: number | null;
+  status: string;
+  categoryId: string;
+  brandId?: string | null;
+  soldCount?: number;
+  createdAt: string;
+}
+
+export interface AdminCategory {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string | null;
+  imageUrl?: string | null;
+  parentId?: string | null;
+  sortOrder: number;
+  children?: AdminCategory[];
+}
+
+export interface AdminBrand {
+  id: string;
+  name: string;
+  slug: string;
+  logoUrl?: string | null;
+  description?: string | null;
+}
+
+// ─── Vouchers / promotions ───────────────────────────────────────────
+export interface AdminVoucher {
+  id: string;
+  code: string;
+  type: string;
+  value: number;
+  maxDiscountAmount?: number | null;
+  minOrderAmount?: number | null;
+  usageLimit?: number | null;
+  usedCount: number;
+  usageLimitPerUser?: number | null;
+  status: string;
+  startsAt: string;
+  endsAt: string;
+}
+
+export interface AdminPromotion {
+  id: string;
+  name: string;
+  type: string;
+  value: number;
+  scope?: string;
+  isActive?: boolean;
+  startsAt: string;
+  endsAt: string;
+}
+
+// ─── Shipping ────────────────────────────────────────────────────────
+export interface AdminShipmentRow {
+  id: string;
+  orderId: string;
+  methodId: string;
+  carrierName?: string | null;
+  trackingCode?: string | null;
+  status: string;
+  createdAt: string;
+  order?: { orderNumber: string; contactName: string } | null;
+  method?: { name: string } | null;
+}
+
+export interface AdminShippingMethod {
+  id: string;
+  code: string;
+  name: string;
+  baseFee: number;
+  feePerKg: number;
+  estimatedDaysMin: number;
+  estimatedDaysMax: number;
+}
+
+export const SHIPMENT_STATUSES = [
+  'PREPARING', 'PICKED_UP', 'IN_TRANSIT', 'OUT_FOR_DELIVERY', 'DELIVERED', 'FAILED', 'RETURNED',
+];
+
+// ─── Reviews ─────────────────────────────────────────────────────────
+export interface AdminReview {
+  id: string;
+  productId: string;
+  rating: number;
+  comment?: string | null;
+  status: string;
+  createdAt: string;
+  user?: { fullName: string; email: string } | null;
+  product?: { name: string; slug: string } | null;
+}
+
+export const REVIEW_STATUSES = ['PENDING', 'APPROVED', 'HIDDEN'];
+
+// ─── Reports ─────────────────────────────────────────────────────────
+export interface RevenuePoint {
+  period: string;
+  revenue: number;
+  orders: number;
+}
+
+export interface TopCategory {
+  name: string;
+  revenue: number;
+  units: number;
+}
+
+export interface SoftLaunch {
+  period: { from: string; to: string };
+  totals: { totalOrders: number; cancelledOrders: number; deliveredOrders: number; returnRequested: number };
+  metrics: { checkoutSuccessRate: number; onTimeRate: number; returnRate: number };
+  gates: { checkout: boolean; onTime: boolean; returns: boolean; allPass: boolean };
+}
+
+// ─── Audit logs ──────────────────────────────────────────────────────
+export interface AuditLogRow {
+  id: string;
+  actorId?: string | null;
+  action: string;
+  entity: string;
+  entityId?: string | null;
+  createdAt: string;
+}
+
+// ─── Users ───────────────────────────────────────────────────────────
+export interface AdminUser {
+  id: string;
+  email: string;
+  fullName: string;
+  phone?: string | null;
+  role: string;
+  status: string;
+  lastLoginAt?: string | null;
+  createdAt: string;
+}
+
+export const USER_ROLES = ['CUSTOMER', 'STAFF', 'MANAGER', 'ADMIN'];
+export const USER_STATUSES = ['ACTIVE', 'INACTIVE', 'BANNED'];

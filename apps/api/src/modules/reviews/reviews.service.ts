@@ -72,6 +72,28 @@ export class ReviewsService {
     }).then((rows) => rows.map((r) => ({ rating: r.rating, count: r._count.rating })));
   }
 
+  /** Admin: queue kiểm duyệt — filter theo status, phân trang. */
+  async listForAdmin(status: string | undefined, page: number, limit: number) {
+    const where = {
+      deletedAt: null,
+      ...(status ? { status: status as never } : {}),
+    };
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.review.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          user: { select: { fullName: true, email: true } },
+          product: { select: { name: true, slug: true } },
+        },
+      }),
+      this.prisma.review.count({ where }),
+    ]);
+    return { items, total, page, limit };
+  }
+
   /** Admin moderation. */
   async moderate(reviewId: string, status: 'APPROVED' | 'HIDDEN') {
     const review = await this.prisma.review.findUniqueOrThrow({ where: { id: reviewId } });

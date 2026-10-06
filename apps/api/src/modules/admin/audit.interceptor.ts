@@ -16,12 +16,15 @@ export class AuditInterceptor implements NestInterceptor {
     if (!meta) return next.handle();
 
     const request = context.switchToHttp().getRequest();
-    const actorId: string | undefined = request.user?.id;
-    const entityId: string | undefined =
-      request.params?.id ?? request.body?.id ?? undefined;
 
     return next.handle().pipe(
-      tap(() => {
+      tap((result) => {
+        const actorId: string | undefined = request.user?.id;
+        const resId = (result as { id?: unknown } | null | undefined)?.id;
+        const entityId: string | undefined =
+          typeof resId === 'string'
+            ? resId
+            : (request.params?.id ?? request.body?.id ?? undefined);
         // Redact sensitive fields before persisting raw bodies
         const body = { ...(request.body ?? {}) };
         for (const key of ['password', 'newPassword', 'currentPassword', 'refreshToken', 'token']) {

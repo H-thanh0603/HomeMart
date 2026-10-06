@@ -1,10 +1,10 @@
 'use client';
 
-export default function GlobalError(props) {
+export default function GlobalError(_props: { error: Error; reset: () => void }) {
   // Keep the component minimal for the static build pass.
   // Only render a static branded 500 page shell — no interactivity needed
   // here (users just F5 to recover).
-  void props;
+  void _props;
 
   return (
     <html lang="vi">
