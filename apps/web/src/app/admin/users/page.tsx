@@ -15,6 +15,7 @@ import { ErrorState } from '@/components/ui/empty-state';
 import { Pagination } from '@/components/ui/pagination';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/stores/toast-store';
+import { friendlyAdminError } from '@/lib/admin-helpers';
 
 const ROLE_BADGE: Record<string, string> = {
   ADMIN: 'bg-purple-100 text-purple-700',
@@ -231,7 +232,7 @@ export default function AdminUsersPage() {
                                   { id: u.id, role: nextRole },
                                   {
                                     onSuccess: () => toast.success('Đã cập nhật role'),
-                                    onError: (err) => toast.error(err.message),
+                                    onError: (err) => toast.error(friendlyAdminError(err)),
                                   },
                                 );
                               }}
@@ -259,7 +260,7 @@ export default function AdminUsersPage() {
                                   { id: u.id, status: nextStatus },
                                   {
                                     onSuccess: () => toast.success('Đã cập nhật trạng thái'),
-                                    onError: (err) => toast.error(err.message),
+                                    onError: (err) => toast.error(friendlyAdminError(err)),
                                   },
                                 );
                               }}
@@ -326,7 +327,7 @@ export default function AdminUsersPage() {
                   { id: confirming.id, role: confirming.to },
                   {
                     onSuccess: () => { toast.success('Đã cập nhật role'); setConfirming(null); },
-                    onError: (err) => toast.error(err.message),
+                    onError: (err) => toast.error(friendlyAdminError(err)),
                   },
                 );
               } else {
@@ -334,7 +335,7 @@ export default function AdminUsersPage() {
                   { id: confirming.id, status: confirming.to },
                   {
                     onSuccess: () => { toast.success('Đã cập nhật trạng thái'); setConfirming(null); },
-                    onError: (err) => toast.error(err.message),
+                    onError: (err) => toast.error(friendlyAdminError(err)),
                   },
                 );
               }

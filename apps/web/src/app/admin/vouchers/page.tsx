@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { useAdminPromotions, useAdminVoucherMutation, useAdminVouchers } from '@/hooks/use-admin';
 import { useAuthStore } from '@/stores/auth-store';
 import { toast } from '@/stores/toast-store';
+import { friendlyAdminError } from '@/lib/admin-helpers';
 import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/input';
 import { DialogLite } from '@/components/ui/dialog-lite';
@@ -74,7 +75,7 @@ export default function AdminVouchersPage() {
         toast.success(`Đã xóa voucher ${v.code}`);
         setConfirming(null);
       },
-      onError: (err) => toast.error(err.message),
+      onError: (err) => toast.error(friendlyAdminError(err)),
     });
   };
 
@@ -283,7 +284,7 @@ export default function AdminVouchersPage() {
                   setDialog({ open: false, editing: null });
                   toast.success('Đã cập nhật voucher');
                 },
-                onError: (err) => toast.error(err.message),
+                onError: (err) => toast.error(friendlyAdminError(err)),
               },
             );
           } else {
@@ -292,7 +293,7 @@ export default function AdminVouchersPage() {
                 setDialog({ open: false, editing: null });
                 toast.success('Đã tạo voucher');
               },
-              onError: (err) => toast.error(err.message),
+              onError: (err) => toast.error(friendlyAdminError(err)),
             });
           }
         }}

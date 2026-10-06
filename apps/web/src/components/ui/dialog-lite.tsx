@@ -14,6 +14,10 @@ interface DialogLiteProps {
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
 
+// Học Twenty single-active guard (confirm modal throw khi đã có modal):
+// HomeMart không crash app mà stacking z-index + warn dev — caller nên tránh mở 2 dialog cùng lúc.
+let openDialogCount = 0;
+
 /**
  * Modal nhẹ không phụ thuộc thư viện ngoài.
  * A11y: focus trap (Tab/Shift+Tab giữ trong hộp thoại), focus chuyển vào
@@ -26,6 +30,10 @@ export function DialogLite({ open, onClose, title, children, className }: Dialog
 
   useEffect(() => {
     if (!open) return;
+    openDialogCount += 1;
+    if (openDialogCount > 1 && process.env.NODE_ENV !== 'production') {
+      console.error(`[DialogLite] ${openDialogCount} dialogs mở cùng lúc — kiểm tra caller.`);
+    }
     previouslyFocused.current = (document.activeElement as HTMLElement) ?? null;
 
     const onKey = (e: KeyboardEvent) => {
@@ -67,6 +75,7 @@ export function DialogLite({ open, onClose, title, children, className }: Dialog
       document.removeEventListener('keydown', onKey, true);
       document.body.style.overflow = '';
       clearTimeout(t);
+      openDialogCount = Math.max(0, openDialogCount - 1);
       // Trả focus về nơi đã mở hộp thoại (WCAG 2.4.3).
       previouslyFocused.current?.focus?.();
     };

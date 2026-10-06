@@ -182,7 +182,11 @@ Mỗi rule có ví dụ GOOD/BAD + acceptance. Nguồn: Carbon DS, GOV.UK DS, NN
 
 ## Chưa làm (cố ý để lại)
 
-- Export async + history (BE-008): chưa có export lớn nào, thêm khi cần.
+- Export async SSE onProgress (BE-008, học Twenty record-export): backend chưa
+  có endpoint export nào — thêm cả API + UI khi cần, bê pattern
+  `createRecordExportConnection` (GraphQL SSE, onProgress, cancel).
+- Empty biết soft-delete (học Twenty isSoftDeleteFilterActive + trash restore):
+  DB đã có deletedAt khắp nơi nhưng chưa có trash UI/filter — thêm khi cần.
 - Error `{code, request_id}` chuẩn (BE-011): API đang message text; đổi khi version API.
 - Undo toast sau delete (FE-011): delete hiện hard-confirm; thêm undo khi có soft-delete restore đồng bộ UI.
 - Column visibility (DATA-025), drawer quick-view (FE-006), density toggle:

@@ -22,6 +22,7 @@ import {
 import { useAuthStore } from '@/stores/auth-store';
 import { ADMIN_ROLES } from '@/hooks/use-admin';
 import { AdminCommandPalette } from '@/components/admin/command-palette';
+import { AdminShortcutsDialog } from '@/components/admin/shortcuts-dialog';
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const { user, hydrated } = useAuthStore();
@@ -113,6 +114,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <AdminShortcutsDialog />
           <span className="hidden items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-500 shadow-sm md:flex">
             Nhấn <kbd className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] font-bold text-slate-700">⌘K</kbd> để tìm lệnh
           </span>

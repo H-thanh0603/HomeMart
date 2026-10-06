@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { useAdminBrands, useAdminCatalogMutation, useAdminCategories } from '@/hooks/use-admin';
 import { useAuthStore } from '@/stores/auth-store';
 import { toast } from '@/stores/toast-store';
+import { friendlyAdminError } from '@/lib/admin-helpers';
 import type { AdminBrand, AdminCategory } from '@/lib/admin-types';
 import { Button } from '@/components/ui/button';
 import { Input, Select, Textarea } from '@/components/ui/input';
@@ -68,7 +69,7 @@ function CategoriesTab() {
         toast.success('Đã xóa danh mục');
         setConfirmingId(null);
       },
-      onError: (e) => toast.error(e.message),
+      onError: (e) => toast.error(friendlyAdminError(e)),
     });
   };
 
@@ -193,7 +194,7 @@ function CategoriesTab() {
                 toast.success(editing ? 'Đã cập nhật danh mục' : 'Đã thêm danh mục');
                 setDialogOpen(false);
               },
-              onError: (e: Error) => toast.error(e.message),
+              onError: (e: Error) => toast.error(friendlyAdminError(e)),
             };
             if (editing) mutation.updateCategory.mutate({ id: editing.id, body }, done);
             else mutation.createCategory.mutate(body, done);
@@ -331,7 +332,7 @@ function BrandsTab() {
         toast.success('Đã xóa thương hiệu');
         setConfirmingId(null);
       },
-      onError: (e) => toast.error(e.message),
+      onError: (e) => toast.error(friendlyAdminError(e)),
     });
   };
 
@@ -459,7 +460,7 @@ function BrandsTab() {
                 toast.success(editing ? 'Đã cập nhật thương hiệu' : 'Đã thêm thương hiệu');
                 setDialogOpen(false);
               },
-              onError: (e: Error) => toast.error(e.message),
+              onError: (e: Error) => toast.error(friendlyAdminError(e)),
             };
             if (editing) mutation.updateBrand.mutate({ id: editing.id, body }, done);
             else mutation.createBrand.mutate(body, done);

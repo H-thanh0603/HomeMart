@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { useAdminShipments, useAdminShippingMutation } from '@/hooks/use-admin';
 import { useAuthStore } from '@/stores/auth-store';
 import { toast } from '@/stores/toast-store';
+import { friendlyAdminError } from '@/lib/admin-helpers';
 import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/input';
 import { DialogLite } from '@/components/ui/dialog-lite';
@@ -178,7 +179,7 @@ export default function AdminShippingPage() {
         <MethodForm pending={mutation.createMethod.isPending} onSubmit={(data) =>
           mutation.createMethod.mutate(data, {
             onSuccess: () => toast.success('Đã tạo phương thức vận chuyển'),
-            onError: (err) => toast.error(err.message),
+            onError: (err) => toast.error(friendlyAdminError(err)),
           })
         } />
       </section>
@@ -198,7 +199,7 @@ export default function AdminShippingPage() {
                     setTrackingRow(null);
                     toast.success('Đã cập nhật tracking');
                   },
-                  onError: (err) => toast.error(err.message),
+                  onError: (err) => toast.error(friendlyAdminError(err)),
                 },
               )
             }

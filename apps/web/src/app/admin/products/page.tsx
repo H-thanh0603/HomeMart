@@ -14,6 +14,7 @@ import {
 } from '@/hooks/use-admin';
 import { useAuthStore } from '@/stores/auth-store';
 import { toast } from '@/stores/toast-store';
+import { friendlyAdminError } from '@/lib/admin-helpers';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import type { AdminCategory, AdminProduct } from '@/lib/admin-types';
 import { Button } from '@/components/ui/button';
@@ -97,8 +98,14 @@ export default function AdminProductsPage() {
     setSelected((s) => (s.length === products.length ? [] : products.map((p) => p.id)));
 
   const [confirmingBulk, setConfirmingBulk] = useState(false);
+  // Học Twenty incremental bulk: backend updateMany atomic 1 query nên không
+  // cần chia batch, nhưng UI vẫn có progress + retry khi lỗi (partial-aware).
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
+  const [bulkFailed, setBulkFailed] = useState<string[]>([]);
 
   const runBulk = () => {
+    setBulkProgress({ done: 0, total: selected.length });
+    setBulkFailed([]);
     mutation.bulk.mutate(
       { action: bulkAction, ids: selected },
       {
@@ -106,8 +113,14 @@ export default function AdminProductsPage() {
           toast.success((r as { message?: string })?.message ?? 'Đã áp dụng bulk');
           setSelected([]);
           setConfirmingBulk(false);
+          setBulkProgress(null);
         },
-        onError: (e) => toast.error(e.message),
+        onError: (e) => {
+          toast.error(friendlyAdminError(e));
+          // Backend all-or-nothing → toàn bộ ids coi như failed, cho retry 1 chạm.
+          setBulkFailed(selected);
+          setBulkProgress(null);
+        },
       },
     );
   };
@@ -129,14 +142,14 @@ export default function AdminProductsPage() {
         setConfirmingId(null);
         setSelected((s) => s.filter((x) => x !== id));
       },
-      onError: (e) => toast.error(e.message),
+      onError: (e) => toast.error(friendlyAdminError(e)),
     });
   };
 
   const handleRestore = (id: string) => {
     mutation.restore.mutate(id, {
       onSuccess: () => toast.success('Đã khôi phục sản phẩm'),
-      onError: (e) => toast.error(e.message),
+      onError: (e) => toast.error(friendlyAdminError(e)),
     });
   };
 
@@ -255,6 +268,23 @@ export default function AdminProductsPage() {
           <Button size="sm" variant="outline" loading={mutation.bulk.isPending} onClick={handleBulk}>
             Áp dụng
           </Button>
+          {mutation.bulk.isPending && bulkProgress && (
+            <span className="text-xs font-medium text-slate-500" role="status">
+              Đang xử lý {bulkProgress.done}/{bulkProgress.total}…
+            </span>
+          )}
+          {bulkFailed.length > 0 && !mutation.bulk.isPending && (
+            <button
+              onClick={() => {
+                setSelected(bulkFailed);
+                setBulkFailed([]);
+                runBulk();
+              }}
+              className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100"
+            >
+              Thử lại {bulkFailed.length} mục lỗi
+            </button>
+          )}
           <div className="ml-auto flex items-center gap-2">
             <label className="cursor-pointer rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
               {importProducts.isPending ? 'Đang nhập…' : 'Import CSV'}
@@ -424,8 +454,17 @@ export default function AdminProductsPage() {
         title={`Xóa ${selected.length} sản phẩm?`}
       >
         <p className="text-sm text-slate-700">
-          Hành động này không thể hoàn tác. Các sản phẩm đã chọn sẽ bị xóa khỏi catalog.
+          Hành động này không thể hoàn tác. Các sản phẩm đã chọn sẽ bị xóa khỏi catalog:
         </p>
+        <ul className="mt-2 max-h-32 space-y-1 overflow-auto rounded-xl bg-slate-50 px-3 py-2 font-mono text-xs text-slate-700">
+          {products
+            .filter((p) => selected.includes(p.id))
+            .slice(0, 5)
+            .map((p) => (
+              <li key={p.id}>• {p.sku} — {p.name}</li>
+            ))}
+          {selected.length > 5 && <li>… và {selected.length - 5} sản phẩm nữa</li>}
+        </ul>
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="ghost" onClick={() => setConfirmingBulk(false)}>Hủy</Button>
           <Button variant="danger" loading={mutation.bulk.isPending} onClick={runBulk}>
@@ -454,7 +493,7 @@ export default function AdminProductsPage() {
                     toast.success('Đã cập nhật sản phẩm');
                     setDialogOpen(false);
                   },
-                  onError: (e) => toast.error(e.message),
+                  onError: (e) => toast.error(friendlyAdminError(e)),
                 },
               );
             } else {
@@ -463,7 +502,7 @@ export default function AdminProductsPage() {
                   toast.success('Đã thêm sản phẩm');
                   setDialogOpen(false);
                 },
-                onError: (e) => toast.error(e.message),
+                onError: (e) => toast.error(friendlyAdminError(e)),
               });
             }
           }}

@@ -13,6 +13,7 @@ import { EmptyState, ErrorState } from '@/components/ui/empty-state';
 import { Pagination } from '@/components/ui/pagination';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/stores/toast-store';
+import { friendlyAdminError } from '@/lib/admin-helpers';
 
 const STATUS_LABELS: Record<string, string> = {
   PENDING: 'Chờ duyệt',
@@ -60,7 +61,7 @@ export default function AdminReviewsPage() {
       { id, status: action },
       {
         onSuccess: () => toast.success(action === 'APPROVED' ? 'Đã duyệt đánh giá' : 'Đã ẩn đánh giá'),
-        onError: (e: Error) => toast.error(`Thao tác thất bại: ${e.message}`),
+        onError: (e: Error) => toast.error(friendlyAdminError(e)),
       },
     );
   };

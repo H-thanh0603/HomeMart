@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useAdjustInventory, useLowStock } from '@/hooks/use-admin';
 import { useAuthStore } from '@/stores/auth-store';
 import { toast } from '@/stores/toast-store';
+import { friendlyAdminError } from '@/lib/admin-helpers';
 import type { LowStockRow } from '@/lib/admin-types';
 import { Button } from '@/components/ui/button';
 import { DialogLite } from '@/components/ui/dialog-lite';
@@ -31,7 +32,7 @@ export default function AdminInventoryPage() {
           toast.success(`Đã nhập +${delta} cho ${restocking.product?.name ?? restocking.productId}`);
           setRestocking(null);
         },
-        onError: (e) => toast.error(e.message),
+        onError: (e) => toast.error(friendlyAdminError(e)),
       },
     );
   };

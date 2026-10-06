@@ -1,4 +1,43 @@
+import { ApiError } from './api';
 import { ORDER_STATUS_LABELS } from './utils';
+
+/**
+ * Học Twenty getToastOptionsFromError: map error code backend → message
+ * thân thiện cho admin. Code lạ → message gốc. Dùng cho mọi toast.error
+ * trong admin thay vì hiện message thô.
+ */
+const ADMIN_ERROR_MESSAGES: Record<string, string> = {
+  OUT_OF_STOCK: 'Sản phẩm đã hết hàng — kiểm tra tồn kho trước khi thao tác.',
+  PRICE_CHANGED: 'Giá sản phẩm vừa thay đổi — tải lại rồi thử lại.',
+  VOUCHER_INVALID: 'Voucher không hợp lệ hoặc đã hết lượt.',
+  VOUCHER_LIMIT_REACHED: 'Voucher đã hết lượt sử dụng.',
+  INVALID_TRANSITION: 'Trạng thái đơn không cho phép chuyển như vậy.',
+  CHECKOUT_FAILED: 'Thanh toán thất bại — thử lại.',
+  ALREADY_REVIEWED: 'Mục này đã được đánh giá rồi.',
+  ORDER_NOT_ELIGIBLE: 'Chỉ đánh giá được sau khi đơn đã giao.',
+  INVALID_RATING: 'Điểm đánh giá phải từ 1–5.',
+  CONFLICT: 'Dữ liệu bị trùng — kiểm tra lại (SKU/slug/mã đã tồn tại?).',
+  NOT_FOUND: 'Không tìm thấy dữ liệu — có thể đã bị xóa.',
+};
+
+const HTTP_FALLBACK: Record<number, string> = {
+  400: 'Dữ liệu gửi lên chưa đúng — kiểm tra lại các trường.',
+  401: 'Phiên đăng nhập hết hạn — đăng nhập lại.',
+  403: 'Bạn không có quyền làm việc này.',
+  404: 'Không tìm thấy dữ liệu — có thể đã bị xóa.',
+  409: 'Dữ liệu bị trùng — kiểm tra lại (SKU/slug/mã đã tồn tại?).',
+  422: 'Thao tác vi phạm quy tắc nghiệp vụ — xem chi tiết.',
+};
+
+export function friendlyAdminError(e: unknown): string {
+  if (e instanceof ApiError) {
+    if (e.code && ADMIN_ERROR_MESSAGES[e.code]) return ADMIN_ERROR_MESSAGES[e.code];
+    if (e.status && HTTP_FALLBACK[e.status]) return HTTP_FALLBACK[e.status];
+    if (e.message) return e.message;
+  }
+  if (e instanceof Error && e.message) return e.message;
+  return 'Có lỗi xảy ra, vui lòng thử lại';
+}
 
 export const PRODUCT_SORTS = ['best_selling', 'price_asc', 'price_desc', 'rating'] as const;
 

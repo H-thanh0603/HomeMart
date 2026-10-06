@@ -2,7 +2,25 @@
  * Unit test cho admin-helpers — logic thuần tách từ UI admin
  * (dashboard attentions, whitelist sort, lọc command palette).
  */
-import { buildAttentions, filterCommands, normalizeProductSort } from './admin-helpers';
+import { ApiError } from './api';
+import { buildAttentions, filterCommands, friendlyAdminError, normalizeProductSort } from './admin-helpers';
+
+describe('friendlyAdminError (học Twenty getToastOptionsFromError)', () => {
+  it('map code backend → message thân thiện', () => {
+    expect(friendlyAdminError(new ApiError('raw', 422, 'OUT_OF_STOCK'))).toContain('hết hàng');
+    expect(friendlyAdminError(new ApiError('raw', 422, 'INVALID_TRANSITION'))).toContain('Trạng thái đơn');
+    expect(friendlyAdminError(new ApiError('raw', 409, 'CONFLICT'))).toContain('trùng');
+  });
+  it('fallback theo HTTP status khi không có code', () => {
+    expect(friendlyAdminError(new ApiError('raw', 401))).toContain('đăng nhập lại');
+    expect(friendlyAdminError(new ApiError('raw', 403))).toContain('quyền');
+  });
+  it('code lạ → message gốc; không phải Error → mặc định', () => {
+    expect(friendlyAdminError(new ApiError('Lỗi gốc XYZ', 500, 'WEIRD_CODE'))).toBe('Lỗi gốc XYZ');
+    expect(friendlyAdminError(new Error('boom'))).toBe('boom');
+    expect(friendlyAdminError(null)).toBe('Có lỗi xảy ra, vui lòng thử lại');
+  });
+});
 
 describe('normalizeProductSort', () => {
   it('giữ sort hợp lệ backend IsIn chấp nhận', () => {
