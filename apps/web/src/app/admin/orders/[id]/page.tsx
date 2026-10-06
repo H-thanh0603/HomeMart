@@ -13,6 +13,8 @@ import {
 import { useAuthStore } from '@/stores/auth-store';
 import { formatCurrency, formatDate, ORDER_STATUS_LABELS } from '@/lib/utils';
 import { OrderStatusBadge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { DialogLite } from '@/components/ui/dialog-lite';
 import { ErrorState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { MANAGER_ONLY_ACTIONS, NEXT_STATUS_OPTIONS } from '@/lib/admin-types';
@@ -30,6 +32,8 @@ export default function AdminOrderDetailPage() {
   const [note, setNote] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null); // action đang chờ confirm
+  // Financial action (chạm tiền thật qua gateway) → DialogLite riêng, không chạy ngay.
+  const [confirmingRefund, setConfirmingRefund] = useState(false);
 
   const isManager = user?.role === 'ADMIN' || user?.role === 'MANAGER';
 
@@ -184,12 +188,7 @@ export default function AdminOrderDetailPage() {
           {isManager && (order.status === 'RETURNED' || order.status === 'RETURN_REQUESTED') && hasGatewayPayment && (
             <button
               disabled={refund.isPending}
-              onClick={() =>
-                runAction(
-                  () => refund.mutateAsync({ id: order.id }),
-                  'refund',
-                )
-              }
+              onClick={() => setConfirmingRefund(true)}
               className="flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:opacity-40"
             >
               <RefreshCcw className="h-4 w-4" />
@@ -257,6 +256,35 @@ export default function AdminOrderDetailPage() {
           </dl>
         </section>
       </div>
+
+      <DialogLite
+        open={confirmingRefund}
+        onClose={() => setConfirmingRefund(false)}
+        title={`Hoàn tiền ${formatCurrency(Number(paidPayment?.amountVnd ?? order.totalAmount))}?`}
+      >
+        <div className="space-y-2 text-sm text-slate-700">
+          <p>
+            Hoàn tiền đơn <strong>{order.orderNumber}</strong> qua{' '}
+            <strong>{paidPayment?.method}</strong>
+            {paidPayment?.providerRef ? <> (ref <code className="rounded bg-slate-100 px-1 font-mono text-xs">{paidPayment.providerRef}</code>)</> : null}.
+          </p>
+          <p className="font-semibold text-red-700">Tiền thật rời khỏi tài khoản — không thể hoàn tác từ UI.</p>
+        </div>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="ghost" onClick={() => setConfirmingRefund(false)}>Hủy</Button>
+          <Button
+            variant="danger"
+            loading={refund.isPending}
+            onClick={() => {
+              setActionError(null);
+              setConfirmingRefund(false);
+              refund.mutate({ id: order.id }, { onError: (e: Error) => setActionError(e.message) });
+            }}
+          >
+            Xác nhận hoàn tiền
+          </Button>
+        </div>
+      </DialogLite>
 
       {/* Items */}
       <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">

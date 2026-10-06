@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { Clock, FileCheck2, Upload } from 'lucide-react';
 import { useExpirePending, useReconcile, useReconcileReport } from '@/hooks/use-admin';
 import { useAuthStore } from '@/stores/auth-store';
+import { Button } from '@/components/ui/button';
+import { DialogLite } from '@/components/ui/dialog-lite';
 
 export default function AdminOpsPage() {
   const { user } = useAuthStore();
@@ -14,6 +16,8 @@ export default function AdminOpsPage() {
   const report = useReconcileReport();
 
   const [expireResult, setExpireResult] = useState<string | null>(null);
+  // Hủy đơn hàng loạt (dù cron cũng làm) → confirm, không chạy ngay.
+  const [confirmingExpire, setConfirmingExpire] = useState(false);
   const [reconcileResult, setReconcileResult] = useState<string | null>(null);
   const [reportProvider, setReportProvider] = useState<'VNPAY' | 'MOMO'>('VNPAY');
   const [reportResult, setReportResult] = useState<string | null>(null);
@@ -53,14 +57,7 @@ export default function AdminOpsPage() {
           </div>
           <button
             disabled={expirePending.isPending}
-            onClick={async () => {
-              try {
-                const r = await expirePending.mutateAsync();
-                setExpireResult(`Đã hủy ${r?.cancelled ?? '?'} đơn PENDING quá hạn.`);
-              } catch (e) {
-                setExpireResult(`Lỗi: ${(e as Error).message}`);
-              }
-            }}
+            onClick={() => setConfirmingExpire(true)}
             className="shrink-0 rounded-xl bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-40"
           >
             {expirePending.isPending ? 'Đang chạy…' : 'Chạy ngay'}
@@ -72,6 +69,35 @@ export default function AdminOpsPage() {
           </p>
         )}
       </section>
+
+      {/* Reconcile */}
+      <DialogLite
+        open={confirmingExpire}
+        onClose={() => setConfirmingExpire(false)}
+        title="Hủy đơn PENDING quá hạn?"
+      >
+        <p className="text-sm text-slate-700">
+          Mọi đơn PENDING quá <code className="rounded bg-slate-100 px-1 font-mono text-xs">ORDER_PAYMENT_TIMEOUT_MINUTES</code> sẽ bị
+          hủy + giải phóng kho + hủy payment giữ chỗ. Cron 5 phút/lần cũng làm việc này — chỉ chạy tay khi nghi đơn kẹt.
+        </p>
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="ghost" onClick={() => setConfirmingExpire(false)}>Hủy</Button>
+          <Button
+            loading={expirePending.isPending}
+            onClick={async () => {
+              try {
+                const r = await expirePending.mutateAsync();
+                setExpireResult(`Đã hủy ${r?.cancelled ?? '?'} đơn PENDING quá hạn.`);
+                setConfirmingExpire(false);
+              } catch (e) {
+                setExpireResult(`Lỗi: ${(e as Error).message}`);
+              }
+            }}
+          >
+            Xác nhận chạy
+          </Button>
+        </div>
+      </DialogLite>
 
       {/* Reconcile */}
       <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm">
