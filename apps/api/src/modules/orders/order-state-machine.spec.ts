@@ -48,4 +48,14 @@ describe('Order State Machine (BR-5)', () => {
     expect(CUSTOMER_CANCELLABLE).not.toContain(OrderStatus.DELIVERED);
     expect(CUSTOMER_CANCELLABLE).toContain(OrderStatus.PENDING);
   });
+
+  it('paid pre-ship orders can only reach refunds via RETURN_REQUESTED (manager approval)', () => {
+    // Customer cannot self-cancel a paid order — pre-ship refund requests go
+    // through RETURN_REQUESTED so a MANAGER approves the gateway refund.
+    for (const status of [OrderStatus.CONFIRMED, OrderStatus.PROCESSING, OrderStatus.PACKING]) {
+      expect(ORDER_TRANSITIONS[status]).toContain(OrderStatus.RETURN_REQUESTED);
+    }
+    // Rejecting a pre-ship request resumes fulfilment instead of killing the order.
+    expect(ORDER_TRANSITIONS[OrderStatus.RETURN_REQUESTED]).toContain(OrderStatus.PROCESSING);
+  });
 });

@@ -51,7 +51,7 @@ describe('Payment providers (BR-4 signature verification)', () => {
         vnp_ResponseCode: '00',
         vnp_SecureHash: 'deadbeef'.repeat(16),
       };
-      await expect(vnpay.verifyCallback(payload)).rejects.toThrow('INVALID_VNPAY_SIGNATURE');
+      await expect(vnpay.verifyCallback(payload)).rejects.toThrow('Invalid VNPay signature');
     });
   });
 
@@ -65,7 +65,7 @@ describe('Payment providers (BR-4 signature verification)', () => {
           payType: 'webApp', responseTime: '123', extraData: '',
           signature: 'invalid-signature',
         }),
-      ).rejects.toThrow('INVALID_MOMO_SIGNATURE');
+      ).rejects.toThrow('Invalid MoMo signature');
     });
   });
 });

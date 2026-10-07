@@ -19,13 +19,15 @@ services:
   redis:
     image: redis:7-alpine
     container_name: homemart-redis
-    command: redis-server --appendonly yes
+    # Dev password (khớp REDIS_URL trong .env) — port vẫn publish ra host,
+    # nên redis có auth thì máy khác trên LAN không đọc/ghi được cache.
+    command: redis-server --appendonly yes --requirepass homemart_dev_redis
     ports:
       - "6379:6379"
     volumes:
       - redisdata:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a homemart_dev_redis ping"]
       interval: 5s
       timeout: 3s
       retries: 10

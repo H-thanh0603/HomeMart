@@ -33,7 +33,6 @@ export class UploadsController {
       type: 'object',
       properties: {
         file: { type: 'string', format: 'binary' },
-        folder: { type: 'string', example: 'products' },
       },
       required: ['file'],
     },

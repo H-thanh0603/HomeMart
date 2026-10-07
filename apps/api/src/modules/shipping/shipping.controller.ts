@@ -1,4 +1,4 @@
-import { All, Body, Controller, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
+import { All, BadRequestException, Body, Controller, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, IsString } from 'class-validator';
@@ -37,7 +37,7 @@ export class ShippingController {
     @Query('toDistrict') toDistrict?: string,
     @Query('toWard') toWard?: string,
   ) {
-    if (!methodId) throw new Error('methodId required');
+    if (!methodId) throw new BadRequestException('methodId required');
     return this.shippingService.computeFee({
       methodId,
       subtotal: Number(subtotal) || 0,

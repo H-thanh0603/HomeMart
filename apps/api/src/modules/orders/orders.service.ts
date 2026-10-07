@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { createHash, randomInt } from 'crypto';
-import { OrderStatus, PaymentMethodType, Prisma } from 'src/generated/prisma/client';
+import { OrderStatus, PaymentMethodType, PaymentStatus, Prisma } from 'src/generated/prisma/client';
 import { PrismaService } from '../../infra/prisma.service';
 import { BusinessRuleError } from '../../common/exceptions/business.errors';
 import { generateOrderNumber } from '../../common/utils/helpers';
@@ -14,12 +14,15 @@ type Tx = Prisma.TransactionClient;
 /** BR-5: legal order status transitions. */
 export const ORDER_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   PENDING: [OrderStatus.CONFIRMED, OrderStatus.CANCELLED],
-  CONFIRMED: [OrderStatus.PROCESSING, OrderStatus.CANCELLED],
-  PROCESSING: [OrderStatus.PACKING, OrderStatus.CANCELLED],
-  PACKING: [OrderStatus.SHIPPED, OrderStatus.CANCELLED],
+  // Pre-ship RETURN_REQUESTED = refund request on a PAID order (the customer
+  // cannot self-cancel after money moved — it needs manager approval).
+  CONFIRMED: [OrderStatus.PROCESSING, OrderStatus.CANCELLED, OrderStatus.RETURN_REQUESTED],
+  PROCESSING: [OrderStatus.PACKING, OrderStatus.CANCELLED, OrderStatus.RETURN_REQUESTED],
+  PACKING: [OrderStatus.SHIPPED, OrderStatus.CANCELLED, OrderStatus.RETURN_REQUESTED],
   SHIPPED: [OrderStatus.DELIVERED, OrderStatus.RETURN_REQUESTED],
   DELIVERED: [OrderStatus.COMPLETED, OrderStatus.RETURN_REQUESTED],
-  RETURN_REQUESTED: [OrderStatus.RETURNED, OrderStatus.COMPLETED],
+  // PROCESSING = request rejected → resume fulfilment
+  RETURN_REQUESTED: [OrderStatus.RETURNED, OrderStatus.COMPLETED, OrderStatus.PROCESSING],
   RETURNED: [OrderStatus.REFUNDED],
   COMPLETED: [],
   CANCELLED: [],
@@ -335,14 +338,34 @@ export class OrdersService {
     if (!CUSTOMER_CANCELLABLE.includes(order.status)) {
       throw new BusinessRuleError('Order can no longer be cancelled', 'ORDER_NOT_CANCELLABLE');
     }
+    // A paid order cannot be self-cancelled: flipping the payment to REFUNDED
+    // here would never move money at the gateway (ledger desync, no approval).
+    // Paid customers go through requestReturn → manager approves + refunds.
+    const payment = await this.prisma.payment.findUnique({ where: { orderId } });
+    if (payment?.status === PaymentStatus.SUCCESS) {
+      throw new BusinessRuleError(
+        'Đơn đã thanh toán — vui lòng tạo yêu cầu hoàn tiền/trả hàng để được duyệt',
+        'ORDER_PAID_USE_RETURN',
+      );
+    }
     return this.transition(order.id, OrderStatus.CANCELLED, userId, reason);
   }
 
   async requestReturn(userId: string, orderId: string, reason?: string) {
     const order = await this.getOwned(userId, orderId);
-    const eligible: OrderStatus[] = [OrderStatus.SHIPPED, OrderStatus.DELIVERED];
-    if (!eligible.includes(order.status)) {
-      throw new BusinessRuleError('Return not allowed at this stage', 'RETURN_NOT_ALLOWED');
+    // SHIPPED/DELIVERED: return goods. CONFIRMED/PROCESSING/PACKING: refund
+    // request on a paid order only (unpaid ones just cancel).
+    const preShip: OrderStatus[] = [OrderStatus.CONFIRMED, OrderStatus.PROCESSING, OrderStatus.PACKING];
+    if (preShip.includes(order.status)) {
+      const payment = await this.prisma.payment.findUnique({ where: { orderId } });
+      if (payment?.status !== PaymentStatus.SUCCESS) {
+        throw new BusinessRuleError('Return not allowed at this stage', 'RETURN_NOT_ALLOWED');
+      }
+    } else {
+      const shipped: OrderStatus[] = [OrderStatus.SHIPPED, OrderStatus.DELIVERED];
+      if (!shipped.includes(order.status)) {
+        throw new BusinessRuleError('Return not allowed at this stage', 'RETURN_NOT_ALLOWED');
+      }
     }
     return this.transition(order.id, OrderStatus.RETURN_REQUESTED, userId, reason);
   }
@@ -386,35 +409,49 @@ export class OrdersService {
 
       if (to === OrderStatus.CANCELLED || to === OrderStatus.RETURNED) {
         const payment = await tx.payment.findUnique({ where: { orderId } });
-        const wasPaid = payment && ['SUCCESS'].includes(payment.status);
+        // Money was captured if SUCCESS now, or already REFUNDED (the gateway
+        // refund ran before this transition) — stock must be released either way.
+        const paidStatuses: PaymentStatus[] = [PaymentStatus.SUCCESS, PaymentStatus.REFUNDED];
+        const wasPaid = !!payment && paidStatuses.includes(payment.status);
         // Money-touching transitions require MANAGER+ when actor is STAFF
         if (wasPaid && actorRole === 'STAFF' && (to === OrderStatus.CANCELLED || to === OrderStatus.RETURNED)) {
           throw new ForbiddenException('Chỉ MANAGER/ADMIN mới được duyệt hoàn tiền');
         }
-        if (to === OrderStatus.CANCELLED) {
-          if (!wasPaid) {
-            // Release reserved stock back
-            await this.inventory.release(tx, reserveItems, order.orderNumber);
-            if (order.voucherCode) await this.promotions.refundUsage(tx, order.voucherCode);
-          } else {
-            // Paid order cancelled → must refund, not strand stock/payment
-            await tx.payment.update({ where: { orderId }, data: { status: 'REFUNDED' } });
-            await this.inventory.release(tx, reserveItems, order.orderNumber);
-            if (order.voucherCode) await this.promotions.refundUsage(tx, order.voucherCode);
+        // COD/BANK_TRANSFER refunds happen manually outside any gateway, so the
+        // ledger flag IS the record. Gateway payments (VNPay/MoMo/Stripe) must
+        // go through refundViaGateway() to move the money — flipping status here
+        // would desync the ledger and block the real refund (it requires SUCCESS).
+        const manualMethods: PaymentMethodType[] = [PaymentMethodType.COD, PaymentMethodType.BANK_TRANSFER];
+        const isManualRefund = !!payment && manualMethods.includes(payment.method);
+        const settleManualRefund = async () => {
+          if (payment?.status === PaymentStatus.SUCCESS && isManualRefund) {
+            await tx.payment.update({ where: { orderId }, data: { status: PaymentStatus.REFUNDED } });
             this.events.emit('refund.succeeded', { orderId, userId: order.userId });
           }
-        }
-        if (wasPaid && to === OrderStatus.RETURNED) {
-          await tx.payment.update({ where: { orderId }, data: { status: 'REFUNDED' } });
+        };
+        if (to === OrderStatus.CANCELLED) {
+          await settleManualRefund();
           await this.inventory.release(tx, reserveItems, order.orderNumber);
           if (order.voucherCode) await this.promotions.refundUsage(tx, order.voucherCode);
-          this.events.emit('refund.succeeded', { orderId, userId: order.userId });
+        }
+        if (wasPaid && to === OrderStatus.RETURNED) {
+          await settleManualRefund();
+          await this.inventory.release(tx, reserveItems, order.orderNumber);
+          if (order.voucherCode) await this.promotions.refundUsage(tx, order.voucherCode);
         }
       }
 
       if (to === OrderStatus.DELIVERED) {
         const shipment = await tx.shipment.findUnique({ where: { orderId } });
         if (shipment) await tx.shipment.update({ where: { id: shipment.id }, data: { status: 'DELIVERED', deliveredAt: new Date() } });
+      }
+
+      if (to === OrderStatus.CANCELLED) {
+        this.events.emit('order.cancelled', { orderId, userId: order.userId, reason: note });
+      }
+      if (to === OrderStatus.SHIPPED) {
+        const shipment = await tx.shipment.findUnique({ where: { orderId } });
+        this.events.emit('order.shipped', { orderId, userId: order.userId, trackingCode: shipment?.trackingCode });
       }
 
       this.events.emit('order.status_changed', { orderId, from: order.status, to, userId: order.userId });

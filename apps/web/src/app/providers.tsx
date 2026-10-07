@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { Toaster } from '@/components/ui/toast';
 import { useCartStore } from '@/stores/cart-store';
-import { useAuthStore, persistUser, readPersistedUser } from '@/stores/auth-store';
+import { useAuthStore, persistUser, readPersistedUser, setAuthHintCookie } from '@/stores/auth-store';
 import { getData } from '@/lib/api';
 import type { Cart } from '@/lib/types';
 
@@ -34,6 +34,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const user = readPersistedUser();
     if (user) setUser(user);
+    // Refresh the middleware hint cookie so an already-logged-in visitor
+    // isn't bounced off /admin|/account after it expired.
+    setAuthHintCookie(Boolean(user));
     setHydrated();
   }, [setUser, setHydrated]);
 

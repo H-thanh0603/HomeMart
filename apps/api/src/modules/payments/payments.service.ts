@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PaymentMethodType, PaymentStatus } from 'src/generated/prisma/client';
 import { PrismaService } from '../../infra/prisma.service';
@@ -172,11 +172,28 @@ export class PaymentsService {
         productId: i.productId, variantId: i.variantId, quantity: i.quantity,
       })), order.orderNumber);
 
-      // Confirm order through the state machine semantics (PENDING→CONFIRMED)
-      await tx.orderStatusHistory.create({
-        data: { orderId: order.id, fromStatus: order.status, toStatus: 'CONFIRMED', actorId: null, note: `Payment success via ${method}` },
-      });
-      await tx.$queryRaw`UPDATE orders SET status = 'CONFIRMED'::"OrderStatus", version = version + 1, "confirmedAt" = NOW() WHERE id = ${order.id}`;
+      // Confirm order only when still PENDING (state-machine semantics
+      // PENDING→CONFIRMED). The status guard in the UPDATE closes two races:
+      // 1. a webhook arriving after the expiry cron cancelled the order can no
+      //    longer resurrect it (stock was already released) — we throw instead,
+      //    rolling the tx back so the payment stays PROCESSING and the gateway
+      //    retries while ops resolves it;
+      // 2. COD delivery confirmation arrives when the order is already
+      //    SHIPPED/DELIVERED — it must mark payment SUCCESS, not regress the
+      //    order back to CONFIRMED.
+      if (order.status === 'PENDING') {
+        await tx.orderStatusHistory.create({
+          data: { orderId: order.id, fromStatus: order.status, toStatus: 'CONFIRMED', actorId: null, note: `Payment success via ${method}` },
+        });
+        const confirmed = await tx.$queryRaw<{ id: string }[]>`
+          UPDATE orders SET status = 'CONFIRMED'::"OrderStatus", version = version + 1, "confirmedAt" = NOW()
+          WHERE id = ${order.id} AND status = 'PENDING'
+          RETURNING id`;
+        if (!confirmed.length) {
+          this.logger.error(`Webhook ${method}: order ${order.orderNumber} no longer PENDING (expired concurrently) — webhook rejected, payment left for retry/reconcile`);
+          throw new ConflictException(`Order ${order.orderNumber} was cancelled while the payment was being confirmed`);
+        }
+      }
 
       return { handled: true, status: 'SUCCESS' };
     });
@@ -250,9 +267,16 @@ export class PaymentsService {
   async refundViaGateway(orderId: string): Promise<{ orderId: string; status: string; gatewayRef?: string }> {
     const payment = await this.prisma.payment.findUnique({ where: { orderId }, include: { order: true } });
     if (!payment) throw new NotFoundException('Payment not found');
-    if (payment.status !== PaymentStatus.SUCCESS) {
+    // REFUNDED is accepted only to cover the ordering where the state machine
+    // flagged it before the gateway call (order RETURNED first) — the money
+    // still has to move. A recorded refund transaction means it already did.
+    if (payment.status !== PaymentStatus.SUCCESS && payment.status !== PaymentStatus.REFUNDED) {
       throw new BadRequestException(`Cannot refund payment in status ${payment.status}`);
     }
+    const existingRefund = await this.prisma.paymentTransaction.findFirst({
+      where: { paymentId: payment.id, eventType: 'refund' },
+    });
+    if (existingRefund) throw new BadRequestException('Payment already refunded');
     if (!payment.providerRef) throw new BadRequestException('Payment has no providerRef — cannot refund');
     if (payment.method === 'COD' || payment.method === 'BANK_TRANSFER') {
       await this.prisma.payment.update({ where: { id: payment.id }, data: { status: 'REFUNDED' } });

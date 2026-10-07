@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getData, postData, resetAuthRefresh } from '@/lib/api';
 import type { AuthPayload, User } from '@/lib/types';
-import { useAuthStore } from '@/stores/auth-store';
+import { setAuthHintCookie, useAuthStore } from '@/stores/auth-store';
 
 export function useMe() {
   const accessToken = useAuthStore((s) => s.accessToken);
@@ -25,6 +25,7 @@ export function useLogin() {
       // A guest session may have latched the refresh latch — clear it.
       resetAuthRefresh();
       setSession(payload.accessToken, payload.user);
+      setAuthHintCookie(true);
       queryClient.invalidateQueries();
     },
   });
@@ -69,6 +70,7 @@ export function useLogout() {
     },
     onSuccess: () => {
       clearSession();
+      setAuthHintCookie(false);
       queryClient.clear();
     },
   });

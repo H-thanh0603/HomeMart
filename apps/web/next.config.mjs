@@ -1,8 +1,28 @@
 /** @type {import('next').NextConfig} */
+const isDev = process.env.NODE_ENV !== 'production';
+
+// Prod-only CSP: Next's hydration bootstrap needs 'unsafe-inline' for scripts
+// without a nonce-middleware, so this blunts external-script XSS rather than
+// eliminating it. Dev skips CSP (react-refresh needs 'unsafe-eval').
+const contentSecurityPolicy = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "font-src 'self' data:",
+  "connect-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'self'",
+].join('; ');
+
+/** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
   output: 'standalone',
-  
+  poweredByHeader: false,
+
   async rewrites() {
     // Seed data references /placeholder/products/*.jpg which has no real file —
     // serve a generic placeholder instead of a broken image.
@@ -18,6 +38,7 @@ const nextConfig = {
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
           { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+          ...(isDev ? [] : [{ key: 'Content-Security-Policy', value: contentSecurityPolicy }]),
         ],
       },
     ];

@@ -17,6 +17,7 @@ gen() { openssl rand -base64 64 | tr -d '\n/+=' | cut -c1-48; }
 JWT_ACCESS="$(gen)"
 JWT_REFRESH="$(gen)"
 DB_PASS="$(gen)"
+REDIS_PASS="$(gen)"
 
 if [ "${1:-}" = "--print" ]; then
   cat << EOF
@@ -24,6 +25,7 @@ if [ "${1:-}" = "--print" ]; then
 JWT_ACCESS_SECRET=$JWT_ACCESS
 JWT_REFRESH_SECRET=$JWT_REFRESH
 POSTGRES_PASSWORD=$DB_PASS
+REDIS_PASSWORD=$REDIS_PASS
 EOF
   exit 0
 fi
@@ -53,11 +55,12 @@ export FILE
 replace JWT_ACCESS_SECRET "$JWT_ACCESS"
 replace JWT_REFRESH_SECRET "$JWT_REFRESH"
 replace POSTGRES_PASSWORD "$DB_PASS"
+replace REDIS_PASSWORD "$REDIS_PASS"
 chmod 600 "$FILE"
 
 cat << EOF
 ✓ Đã ghi secrets mới vào $FILE (chmod 600):
-  JWT_ACCESS_SECRET / JWT_REFRESH_SECRET / POSTGRES_PASSWORD
+  JWT_ACCESS_SECRET / JWT_REFRESH_SECRET / POSTGRES_PASSWORD / REDIS_PASSWORD
 
 Ghi chú:
 - Secrets cũ coi như ĐÃ LỘ nếu từng zip/share thư mục này — thay đổi ở

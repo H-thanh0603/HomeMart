@@ -59,7 +59,10 @@ export class ShippingService {
     // cache 1h cho những người mua sau trên cùng tuyến.
     const defaultCarrier = this.carriers.values().next().value;
     if (defaultCarrier && input.toProvince && input.toDistrict) {
-      const cacheKey = `ship:fee:${method.code}:${input.toProvince}:${input.toDistrict}:${input.toWard ?? ''}:${input.totalWeightGrams}`;
+      // encodeURIComponent every user-supplied segment: raw `:` delimiters
+      // would let e.g. toDistrict="1461:X:500" alias another route/weight's
+      // cache key and serve (or poison) a different route's fee.
+      const cacheKey = `ship:fee:${method.code}:${encodeURIComponent(String(input.toProvince))}:${encodeURIComponent(String(input.toDistrict))}:${encodeURIComponent(String(input.toWard ?? ''))}:${Number(input.totalWeightGrams) || 0}`;
       const cached = await this.redis.get(cacheKey);
       if (cached) {
         try { return JSON.parse(cached) as { fee: number; estimatedDaysMin: number; estimatedDaysMax: number }; } catch { /* ignore */ }
@@ -254,6 +257,12 @@ export class ShippingService {
           data: { orderId: shipment.orderId, fromStatus: order.status, toStatus: to, actorId: null, note: `Carrier ${carrierName} webhook: ${parsed.status}` },
         });
         this.events.emit('order.status_changed', { orderId: shipment.orderId, from: order.status, to });
+        // Carrier-driven DELIVERED must still fire the customer notification
+        // (admin PATCHes go through OrdersService.transition, which handles
+        // the SHIPPED event).
+        if (to === OrderStatus.DELIVERED) {
+          this.events.emit('order.delivered', { orderId: shipment.orderId, userId: order.userId });
+        }
       } else {
         this.logger.warn(`Webhook ${carrierName} ${parsed.status}: order ${order.orderNumber} changed concurrently — skipped (state machine guard)`);
       }

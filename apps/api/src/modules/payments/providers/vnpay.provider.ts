@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { getEnv } from '../../../config/env';
 import { PaymentProvider, CreatePaymentInput, CreatePaymentResult } from '../payment-provider.interface';
@@ -51,7 +51,9 @@ export class VnpayProvider implements PaymentProvider {
 
     const a = Buffer.from(expected);
     const b = Buffer.from(String(receivedHash ?? ''));
-    if (a.length !== b.length || !timingSafeEqual(a, b)) throw new Error('INVALID_VNPAY_SIGNATURE');
+    // 400 (not a bare Error→500): an unverifiable webhook is the caller's
+    // fault — fail closed, and don't signal an upstream outage to the gateway.
+    if (a.length !== b.length || !timingSafeEqual(a, b)) throw new BadRequestException('Invalid VNPay signature');
 
     return {
       providerTxnId: String(data.vnp_TxnRef ?? ''),

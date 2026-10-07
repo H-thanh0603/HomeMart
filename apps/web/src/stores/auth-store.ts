@@ -65,3 +65,20 @@ export function readPersistedUser(): AuthState['user'] {
     return null;
   }
 }
+
+/**
+ * Non-sensitive "probably logged in" hint for middleware (path /admin, /account).
+ * Not a security control — see src/middleware.ts. The real session cookie is
+ * httpOnly and path-scoped to /api/v1/auth, so middleware can't read it.
+ */
+const AUTH_HINT_COOKIE = 'hm_auth';
+
+export function setAuthHintCookie(loggedIn: boolean) {
+  if (typeof document === 'undefined') return;
+  const secure = window.location.protocol === 'https:' ? '; secure' : '';
+  if (loggedIn) {
+    document.cookie = `${AUTH_HINT_COOKIE}=1; path=/; max-age=${7 * 86400}; SameSite=Lax${secure}`;
+  } else {
+    document.cookie = `${AUTH_HINT_COOKIE}=; path=/; max-age=0; SameSite=Lax${secure}`;
+  }
+}

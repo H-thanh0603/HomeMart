@@ -21,7 +21,13 @@ type LoginForm = z.infer<typeof loginSchema>;
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirect = searchParams.get('redirect') ?? '/account';
+  // Only same-origin paths — `?redirect=https://evil.com` (or `//evil.com`)
+  // would otherwise send the freshly-authenticated user to an attacker site.
+  const rawRedirect = searchParams.get('redirect');
+  const redirect =
+    rawRedirect && rawRedirect.startsWith('/') && !rawRedirect.startsWith('//') && !rawRedirect.startsWith('/\\')
+      ? rawRedirect
+      : '/account';
   const login = useLogin();
 
   const {

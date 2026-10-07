@@ -22,13 +22,17 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required — chạy ./docker/generate-secrets.sh hoặc thêm vào .env.production}
     # volatile-lru: chỉ đuổi key có TTL. catalog:version không có TTL nên
     # không bao giờ bị LRU đuổi ra (tránh phục vụ cache stale sau eviction).
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy volatile-lru
+    # requirepass: Redis không auth = mọi container trên network đọc/ghi được
+    # cache & rate-limit counters — defense in depth.
+    command: ["sh", "-c", "exec redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy volatile-lru --requirepass \"$$REDIS_PASSWORD\""]
     volumes:
       - redisdata:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -44,7 +48,7 @@ services:
       # connection_limit/pool_timeout: chống cạn pool khi checkout đồng thời
       # (transaction checkout giữ lock tới 15s). Tăng theo số replica API.
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public&connection_limit=20&pool_timeout=10
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379
     volumes:
       - uploads:/app/uploads
     depends_on:

@@ -175,6 +175,19 @@ export function getEnv(): Env {
       if (missing.length > 0) {
         throw new Error(`Refusing to start in production with incomplete configuration:\n${missing.join('\n')}`);
       }
+    } else {
+      // Outside production, insecure defaults are allowed for local dev — but
+      // if this instance is reachable from anywhere but localhost, anyone could
+      // mint ADMIN tokens with the public default secrets. Say it out loud.
+      const offenders = PROD_FORBIDDEN_DEFAULTS.filter(([key, defaultValue]) => env[key] === defaultValue).map(([key]) => key);
+      if (offenders.length > 0) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `\n⚠️  [env] Insecure default secrets in use (${offenders.join(', ')}).\n` +
+          '    Fine for local dev — NEVER expose this instance beyond localhost\n' +
+          '    (anyone with the public repo can forge ADMIN tokens).\n',
+        );
+      }
     }
 
     cached = env;

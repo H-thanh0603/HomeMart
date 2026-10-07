@@ -14,6 +14,9 @@ export class NotificationListeners {
         host: process.env.SMTP_HOST,
         port: Number(process.env.SMTP_PORT ?? 1025),
         secure: false,
+        // Prod: refuse to send credentials over a plaintext connection —
+        // require the relay to advertise STARTTLS (dev MailHog unaffected).
+        requireTLS: process.env.NODE_ENV === 'production',
         auth: process.env.SMTP_USER
           ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
           : undefined,
@@ -95,5 +98,28 @@ export class NotificationListeners {
   @OnEvent('promotion.created')
   async onPromotion(p: { title: string; body: string }) {
     await this.notifications.broadcast('PROMOTION', p.title, p.body);
+  }
+
+  // ───────── Auth emails — without these listeners the reset/verify tokens
+  // are created in the DB but never reach the user (dead security control). ─────────
+
+  @OnEvent('auth.registered')
+  async onRegistered(p: { email: string; fullName: string; verifyToken: string }) {
+    const url = `${process.env.WEB_URL ?? 'http://localhost:3000'}/auth/verify-email?token=${encodeURIComponent(p.verifyToken)}`;
+    await this.email(
+      p.email,
+      'Xác thực email HomeMart',
+      `Chào ${p.fullName},\n\nVui lòng xác thực email của bạn (link hết hạn sau 24 giờ):\n${url}\n\nNếu bạn không đăng ký tài khoản, hãy bỏ qua email này.`,
+    );
+  }
+
+  @OnEvent('auth.forgot-password')
+  async onForgotPassword(p: { email: string; fullName: string; resetToken: string }) {
+    const url = `${process.env.WEB_URL ?? 'http://localhost:3000'}/auth/reset-password?token=${encodeURIComponent(p.resetToken)}`;
+    await this.email(
+      p.email,
+      'Đặt lại mật khẩu HomeMart',
+      `Chào ${p.fullName},\n\nBạn (hoặc ai đó) vừa yêu cầu đặt lại mật khẩu. Link có hiệu lực trong 1 giờ:\n${url}\n\nNếu không phải bạn, hãy bỏ qua email này — mật khẩu hiện tại vẫn an toàn.`,
+    );
   }
 }

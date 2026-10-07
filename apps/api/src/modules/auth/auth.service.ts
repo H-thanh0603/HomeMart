@@ -18,9 +18,20 @@ import { randomToken } from '../../common/utils/helpers';
 const BCRYPT_ROUNDS = 12;
 const sha256 = (v: string) => createHash('sha256').update(v).digest('hex');
 
+/** Per-account brute-force throttle (process-local — complements the per-IP
+ * rate limit on the login route). */
+const MAX_FAILED_LOGINS = 10;
+const LOGIN_LOCKOUT_MS = 15 * 60e3;
+const FAILED_LOGIN_MAP_CAP = 10_000;
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
+  /** email(lowercased) → failure count + lock deadline. Cleared on success. */
+  private readonly failedLogins = new Map<string, { count: number; lockedUntil: number }>();
+  /** Static bcrypt target so unknown emails burn the same compare time as
+   * real ones (no account enumeration via response-time analysis). */
+  private timingDummyHash: string | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -54,11 +65,30 @@ export class AuthService {
   }
 
   async login(email: string, password: string, meta?: { ip?: string; userAgent?: string }) {
-    const user = await this.prisma.user.findUnique({ where: { email: email.toLowerCase() } });
-    if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+    const key = email.toLowerCase();
+    const lock = this.failedLogins.get(key);
+    if (lock && lock.lockedUntil > Date.now()) {
+      // Same generic message as a wrong password — the lockout itself must not
+      // confirm the account exists.
+      this.logger.warn(`Login locked out: ${email} ip=${meta?.ip ?? '?'}`);
+      throw new UnauthorizedException('Invalid email or password');
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { email: key } });
+    let passwordOk = false;
+    if (user) {
+      passwordOk = await bcrypt.compare(password, user.passwordHash);
+    } else {
+      // Unknown email: still run one bcrypt compare against a static hash so
+      // response time doesn't reveal whether the account exists.
+      await bcrypt.compare(password, await this.getTimingDummyHash());
+    }
+    if (!user || !passwordOk) {
+      this.recordFailedLogin(key);
       this.logger.warn(`Failed login attempt: ${email} ip=${meta?.ip ?? '?'}`);
       throw new UnauthorizedException('Invalid email or password');
     }
+    this.failedLogins.delete(key);
     // Generic message — a distinct "banned"/"deactivated" error would confirm
     // the password was correct and the account exists (enumeration vector).
     if (user.status === UserStatus.BANNED || user.status === UserStatus.INACTIVE) {
@@ -202,6 +232,33 @@ export class AuthService {
   }
 
   // ─── helpers ───
+
+  private async getTimingDummyHash(): Promise<string> {
+    if (!this.timingDummyHash) {
+      this.timingDummyHash = await bcrypt.hash(randomToken(24), BCRYPT_ROUNDS);
+    }
+    return this.timingDummyHash;
+  }
+
+  private recordFailedLogin(key: string) {
+    if (this.failedLogins.size >= FAILED_LOGIN_MAP_CAP) {
+      // Bucket flooding — drop expired entries, then the rest (bounded memory
+      // beats perfect tracking under a garbage-email storm).
+      const now = Date.now();
+      for (const [k, v] of this.failedLogins) {
+        if (v.lockedUntil <= now) this.failedLogins.delete(k);
+      }
+      if (this.failedLogins.size >= FAILED_LOGIN_MAP_CAP) this.failedLogins.clear();
+    }
+    const entry = this.failedLogins.get(key) ?? { count: 0, lockedUntil: 0 };
+    entry.count += 1;
+    if (entry.count >= MAX_FAILED_LOGINS) {
+      entry.lockedUntil = Date.now() + LOGIN_LOCKOUT_MS;
+      entry.count = 0;
+      this.logger.warn(`Account locked for ${LOGIN_LOCKOUT_MS / 60e3}min after ${MAX_FAILED_LOGINS} failed logins: ${key}`);
+    }
+    this.failedLogins.set(key, entry);
+  }
 
   private userSelect = {
     id: true,

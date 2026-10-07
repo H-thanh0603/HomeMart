@@ -39,7 +39,9 @@ const productInclude = {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function withPrimaryInventory(product: any): any {
   if (!product) return product;
-  const { inventories, ...rest } = product;
+  const { inventories, costPrice: _costPrice, ...rest } = product;
+  // costPrice (giá vốn) chỉ dùng nội bộ — không bao giờ đi ra response,
+  // kể cả admin list/detail (chỉ ghi qua DTO, không có UI đọc lại).
   return { ...rest, inventory: Array.isArray(inventories) ? (inventories.find((i: { variantId: string | null }) => i.variantId === null) ?? null) : null };
 }
 

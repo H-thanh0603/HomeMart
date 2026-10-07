@@ -9,8 +9,8 @@ import { AlertsService } from '../observability/alerts.service';
  * to undefined through require(), breaking DI at boot).
  *
  * Counting is INCR+EXPIRE in Redis (atomic, cross-replica). Redis down →
- * fail-open: rate limiting degrades to off rather than blocking all traffic
- * (RedisService already logs loudly when unavailable).
+ * degraded to per-process in-memory buckets (N replicas ⇒ N×limit) instead of
+ * failing wide open — auth brute-force must stay throttled during an outage.
  *
  * Per-endpoint override via:
  *   @SetMetadata(RATE_LIMIT_KEY, { limit: 10 })   // per minute
@@ -30,6 +30,12 @@ export function setGlobalRateLimit(limit: number) {
 
 @Injectable()
 export class RateLimitGuard implements CanActivate {
+  /** Per-process fallback buckets for when Redis is unavailable — per-replica
+   * approximation so a Redis outage degrades to N×limit (N replicas) instead
+   * of no limiting at all. */
+  private readonly memoryBuckets = new Map<string, { count: number; expiresAt: number }>();
+  private lastSweep = 0;
+
   constructor(
     private readonly reflector: Reflector,
     private readonly redis: RedisService,
@@ -57,10 +63,10 @@ export class RateLimitGuard implements CanActivate {
 
     const client = this.redis.client;
     if (client.status !== 'ready') {
-      // Degraded fail-open: rate limiting is OFF. Alert (throttled) so an
-      // operator knows the perimeter is open during a Redis outage.
-      this.alerts.alertThrottled('rate-limit-redis-down', 'Redis unavailable — rate limiting is failing open (no protection)');
-      return true;
+      // Degraded: Redis is down — fall back to in-process counters rather than
+      // leaving the perimeter wide open (auth brute-force is the main threat).
+      this.alerts.alertThrottled('rate-limit-redis-down', 'Redis unavailable — rate limiting degraded to in-memory per-replica buckets');
+      return this.memoryHit(key, limit, ttl);
     }
 
     try {
@@ -72,11 +78,33 @@ export class RateLimitGuard implements CanActivate {
       return true;
     } catch (e) {
       if (e instanceof HttpException) throw e;
-      // Redis hiccup mid-request: don't block the customer, but don't pretend
-      // the request was rate-limited either.
-      this.alerts.alertThrottled('rate-limit-error', `Rate-limit backend error: ${(e as Error).message}`);
+      // Redis hiccup mid-request: same in-memory fallback instead of a silent
+      // pass-through.
+      this.alerts.alertThrottled('rate-limit-error', `Rate-limit backend error — degraded to in-memory: ${(e as Error).message}`);
+      return this.memoryHit(key, limit, ttl);
+    }
+  }
+
+  /** Sliding-expiry fixed-window counter. Sweeps expired entries once a minute
+   * so the map can't grow unbounded under bucket-flooding. */
+  private memoryHit(key: string, limit: number, ttlSeconds: number): boolean {
+    const now = Date.now();
+    if (now - this.lastSweep > 60_000) {
+      this.lastSweep = now;
+      for (const [k, v] of this.memoryBuckets) {
+        if (v.expiresAt <= now) this.memoryBuckets.delete(k);
+      }
+    }
+    const entry = this.memoryBuckets.get(key);
+    if (!entry || entry.expiresAt <= now) {
+      this.memoryBuckets.set(key, { count: 1, expiresAt: now + ttlSeconds * 1000 });
       return true;
     }
+    entry.count += 1;
+    if (entry.count > limit) {
+      throw new HttpException('Too many requests', HttpStatus.TOO_MANY_REQUESTS);
+    }
+    return true;
   }
 
   /**
